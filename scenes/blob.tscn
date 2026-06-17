@@ -1,4 +1,4 @@
-[gd_scene load_steps=18 format=3 uid="uid://c1actw3its4rp"]
+[gd_scene format=3 uid="uid://c1actw3its4rp"]
 
 [ext_resource type="Texture2D" uid="uid://bi317uw3xwhf3" path="res://assets/With_shadow/Slime1_Idle_with_shadow.png" id="1_iplyg"]
 [ext_resource type="Script" uid="uid://dmu3itbfivbsq" path="res://scripts/blob.gd" id="1_ngma2"]
@@ -98,7 +98,7 @@ animations = [{
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_ngma2"]
 size = Vector2(17, 15)
 
-[node name="Blob" type="RigidBody2D"]
+[node name="Blob" type="RigidBody2D" unique_id=1078886471]
 gravity_scale = 0.0
 contact_monitor = true
 max_contacts_reported = 1
@@ -106,15 +106,15 @@ linear_damp = 20.0
 angular_damp = 20.0
 script = ExtResource("1_ngma2")
 
-[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=1819597891]
 sprite_frames = SubResource("SpriteFrames_ka6ag")
 animation = &"idle"
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=459103209]
 position = Vector2(0.5, 0.5)
 shape = SubResource("RectangleShape2D_ngma2")
 
-[node name="Sprite2D" type="Sprite2D" parent="."]
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=240856288]
 visible = false
 scale = Vector2(0.267351, 0.267351)
 texture = ExtResource("4_7crg0")

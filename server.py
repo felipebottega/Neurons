@@ -22,7 +22,7 @@ NUM_INPUTS = 16
 NUM_OUTPUTS = 4
 MAPPING = {0: 0.2, 1: 0.4, 2: 0.6, 3: 0.8}
 ATCG_MAPPING = {0: 'A', 1: 'T', 2: 'C', 3: 'G'}
-SHOW = False
+SHOW = True
 SHOW_ATCG = False
 NPC = {}
 
@@ -67,37 +67,38 @@ async def websocket_endpoint(websocket: WebSocket):
                 npc_action = npc.get("npc_action")    # process ou gen_brain
                 npc_id = npc.get("id")  # Obtém o ID do NPC
                 inputs = npc.get("inputs")  # Obtém os inputs do NPC
-                                
-                if npc_id is None:
-                    continue
+                               
+                if npc_action in ["gen_brain", "process"]:                               
+                    if npc_id is None:
+                        continue
                     
-                int_id = int(npc_id.replace('blob_', ''))
+                    int_id = int(npc_id.replace('blob_', ''))
 
-                if inputs is not None:                 
-                    if len(inputs) != NUM_INPUTS:
-                        print("Número de inputs do server e engine estão diferentes.")
-                        server.should_exit = True
-                                    
-                if npc_action == "gen_brain":
-                    gens, gens_num = gen_brain()  # Gera o cérebro simulado
-                    gens_num["id"] = npc_id  # Mantém a associação do blob
-                    results.append({"id": gens_num["id"], 
-                                    "npc_action": "gen_brain"})  # Adiciona o resultado à lista
-                    NPC[npc_id] = gens_num  # Adiciona ao dicionário global de cérebros
-                    NPC[npc_id]['gens'] = gens  # Memoriza o código genético puro
-                    extras(npc_id)  # Inclui mais elementos necessários para os processamentos
-                elif npc_action == "process":
-                    # ECONOMIA: faz apenas alguns dos blobs por request
-                    if int_id != 0:
-                        if int_id % mod != counter:
-                            continue                 
-                
-                    outputs = process_npc(npc_id, inputs)  # Processa os inputs e determina a ação
-                    results.append({"id": npc_id, 
-                                    "outputs": outputs, 
-                                    "size": A_MAX * B_MAX * C_MAX, 
-                                    "num_connections": NPC[npc_id]['num_connections'], 
-                                    "npc_action": "process"})  # Adiciona o resultado à lista
+                    if inputs is not None:                 
+                        if len(inputs) != NUM_INPUTS:
+                            print("Número de inputs do server e engine estão diferentes.")
+                            server.should_exit = True
+                                        
+                    if npc_action == "gen_brain":
+                        gens, gens_num = gen_brain()  # Gera o cérebro simulado
+                        gens_num["id"] = npc_id  # Mantém a associação do blob
+                        results.append({"id": gens_num["id"], 
+                                        "npc_action": "gen_brain"})  # Adiciona o resultado à lista
+                        NPC[npc_id] = gens_num  # Adiciona ao dicionário global de cérebros
+                        NPC[npc_id]['gens'] = gens  # Memoriza o código genético puro
+                        extras(npc_id)  # Inclui mais elementos necessários para os processamentos
+                    elif npc_action == "process" and npc_id in NPC:
+                        # Faz apenas alguns dos blobs por request
+                        if int_id != 0:
+                            if int_id % mod != counter & mod:
+                                continue                 
+                    
+                        outputs = process_npc(npc_id, inputs)  # Processa os inputs e determina a ação
+                        results.append({"id": npc_id, 
+                                        "outputs": outputs, 
+                                        "size": A_MAX * B_MAX * C_MAX, 
+                                        "num_connections": NPC[npc_id]['num_connections'], 
+                                        "npc_action": "process"})  # Adiciona o resultado à lista
                 elif npc_action == "offspring":
                     npc_id1 = npc.get("id1")
                     npc_id2 = npc.get("id2")
@@ -108,8 +109,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     else:
                         gens_num["id"] = "blob_" + str(int(len(NPC) + np.random.randint(1000)))
                         npc_id = gens_num["id"]
-                        results.append({"id": gens_num["id"], 
-                                        "npc_action": "offspring"}) 
+                        results.append({"id": gens_num["id"], "npc_action": "offspring"}) 
                         NPC[npc_id] = gens_num  
                         NPC[npc_id]['gens'] = gens  # Memoriza o código genético puro
                         extras(npc_id)  
@@ -117,15 +117,6 @@ async def websocket_endpoint(websocket: WebSocket):
             response = json.dumps({"results": results})  # Cria a resposta com os resultados
             await websocket.send_text(response)  # Envia a resposta ao cliente
             counter += 1
-            counter = counter % mod
-            
-            # Remove do NPC global as ids mortas.
-            current_alive = {npc.get("id") for npc in npcs}
-            
-            if len(current_alive) > 1 and npc_action == "process":
-                for npc_id in list(NPC.keys()):
-                    if npc_id != "blob_0" and npc_id not in current_alive:
-                        del NPC[npc_id]
             
     except Exception as e:
         print("⚠️ Erro na conexão WebSocket:", e)
@@ -375,6 +366,7 @@ def gen_brain():
     return gens, gens_num
     
 def offspring(npc_id1, npc_id2):
+    print("Entrou no offspring")
     success = False
     trial = 0
 
@@ -405,6 +397,7 @@ def offspring(npc_id1, npc_id2):
         trial += 1
 
         if trial == 3 or npc_id1 not in NPC or npc_id2 not in NPC:
+            print('Não gerou a child')
             return '', ''
 
         gens = {}
@@ -800,21 +793,24 @@ def exp_response(x, k):
 
 # Função simulando a lógica de decisão de um NPC
 def process_npc(npc_id, inputs):
-    neuron_signals = NPC[npc_id]['neuron_signals']
-    neuron_thrs = NPC[npc_id]['thr']
-    neuron_connections = NPC[npc_id]['connections']
-    e_orig = NPC[npc_id]['decay']
-    e_now = NPC[npc_id]['connection_strengths']
-    exp_factor = NPC[npc_id]['exp_response']
-        
-    if npc_id == 'blob_0':
-        neuron_signals_tmp, to_zero = process_npc_neurons_blob_0(npc_id, neuron_signals, neuron_thrs, neuron_connections, e_orig, e_now, exp_factor)              
+    if npc_id in NPC:
+        neuron_signals = NPC[npc_id]['neuron_signals']
+        neuron_thrs = NPC[npc_id]['thr']
+        neuron_connections = NPC[npc_id]['connections']
+        e_orig = NPC[npc_id]['decay']
+        e_now = NPC[npc_id]['connection_strengths']
+        exp_factor = NPC[npc_id]['exp_response']
+            
+        if npc_id == 'blob_0':
+            neuron_signals_tmp, to_zero = process_npc_neurons_blob_0(npc_id, neuron_signals, neuron_thrs, neuron_connections, e_orig, e_now, exp_factor)              
+        else:
+            neuron_signals_tmp, to_zero = process_npc_neurons(npc_id, neuron_signals, neuron_thrs, neuron_connections, e_orig, e_now, exp_factor)
+            
+        process_npc_neurons_updates(npc_id, neuron_signals, neuron_signals_tmp, to_zero)
+        process_npc_inputs(npc_id, inputs)
+        outputs = process_npc_outputs(npc_id)  
     else:
-        neuron_signals_tmp, to_zero = process_npc_neurons(npc_id, neuron_signals, neuron_thrs, neuron_connections, e_orig, e_now, exp_factor)
-        
-    process_npc_neurons_updates(npc_id, neuron_signals, neuron_signals_tmp, to_zero)
-    process_npc_inputs(npc_id, inputs)
-    outputs = process_npc_outputs(npc_id)  
+        outputs = None
             
     return outputs
     
@@ -835,7 +831,7 @@ def process_npc_neurons_blob_0(npc_id, neuron_signals, neuron_thrs, neuron_conne
     if it_real % N == 0 or it_real < N: 
         it += 1        
         
-    print(f'Processando sinais - iteração {it_real} ({fps_real} it/s)')
+    #print(f'Processando sinais - iteração {it_real} ({fps_real} it/s)')
     
     npc = NPC[npc_id]
     neuron_inactive_counter = npc['inactive_counter']

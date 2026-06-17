@@ -1,56 +1,1475 @@
-\documentclass[12 pt,a4paper,fleqn]{article}
+\documentclass[12pt,a4paper,fleqn]{article}
+
 \usepackage[brazilian]{babel}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{amsfonts}
 \usepackage{amsmath}
 \usepackage{amssymb}
+\usepackage{amsthm}
 \usepackage{graphicx}
-\usepackage{hyperref}
-\usepackage[all]{xy}
 \usepackage[left=2cm, right=2cm, bottom=3cm, top=2cm]{geometry}
-\usepackage{rotating}
-\usepackage{textcomp}
-\usepackage{flowchart}
 \usepackage{float}
+\usepackage{booktabs}
+\usepackage{array}
+\emergencystretch=2em
+\usepackage{tikz}
+\usetikzlibrary{arrows,positioning,shapes.geometric}
 
+
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\SigmaGen}{\Sigma}
+\newcommand{\id}{\operatorname{id}}
+\newcommand{\UnifInt}{\operatorname{UnifInt}}
+\newcommand{\Bern}{\operatorname{Bern}}
+\newcommand{\card}{\operatorname{card}}
+\newcommand{\clip}{\operatorname{clip}}
+\newcommand{\ind}[1]{\mathbf{1}_{\{#1\}}}
+
+\newcounter{algoritmo}
+\newcommand{\algoritmo}[1]{\refstepcounter{algoritmo}\paragraph{Algoritmo \thealgoritmo. #1}}
+
+\tikzset{
+	flowblock/.style={rectangle, rounded corners=2mm, draw=black, thick, align=center, minimum width=3.3cm, minimum height=1cm, fill=gray!10},
+	flowdecision/.style={diamond, draw=black, thick, aspect=2.0, align=center, inner sep=1pt, fill=gray!10, text width=2.7cm},
+	flowline/.style={->, >=stealth, thick},
+	flowsmall/.style={rectangle, rounded corners=1.5mm, draw=black, thick, align=center, minimum width=2.7cm, minimum height=0.8cm, fill=gray!10},
+	tensornode/.style={circle, draw=black, thick, minimum size=4.2mm, inner sep=0pt, fill=white},
+	inputnode/.style={circle, draw=black, thick, minimum size=4.2mm, inner sep=0pt, fill=green!25},
+	outputnode/.style={circle, draw=black, thick, minimum size=4.2mm, inner sep=0pt, fill=red!25},
+	internode/.style={circle, draw=black, thick, minimum size=4.2mm, inner sep=0pt, fill=blue!10},
+	boxnote/.style={rectangle, rounded corners=2mm, draw=black, thick, align=left, fill=gray!8, inner sep=5pt}
+}
+
+\title{\textbf{Simulação Artificial de Evolução Neuronal}}
+\author{F. Bottega}
+\date{\today}
 
 \begin{document}
-\begin{center}
-	\Large{\textbf{SIMULAÇÃO ARTIFICIAL DE EVOLUÇÃO NEURONAL}}
-\end{center}\bigskip\bigskip
-	
+\maketitle
+
+\begin{abstract}
+\noindent Este artigo descreve um modelo computacional de organismos digitais controlados por cérebros artificiais evolutivos. Diferentemente de redes neurais artificiais tradicionais baseadas em camadas, o modelo proposto representa cada cérebro como uma malha tridimensional de neurônios parcialmente conectados, com topologia, parâmetros de disparo, regiões de conectividade e regras de plasticidade definidos por um genoma discreto. Os organismos habitam um ambiente bidimensional, recebem sinais sensoriais, processam tais sinais por meio de uma dinâmica neuronal recorrente e executam ações motoras binárias. A seleção não é definida por uma função de perda explícita; ela emerge de uma ecologia simples baseada em energia, alimentação, sobrevivência e reprodução. São apresentadas a formalização do genoma, as regras de geração fenotípica, a dinâmica de propagação de sinais, a plasticidade das conexões, o mecanismo de recombinação por offspring e a metodologia de implementação em Godot e Python via WebSocket. Além da descrição formal, o texto enfatiza uma apresentação didática do sistema por meio de fluxogramas, diagramas e tabelas, de modo a tornar explícitos os vínculos entre teoria, algoritmo e implementação.
+
+\medskip
+\noindent \textbf{Palavras-chave:} neuroevolução; algoritmos genéticos; agentes artificiais; plasticidade neuronal; simulação baseada em agentes; sistemas complexos.
+\end{abstract}
+
 \section{Introdução}
-	Queremos simular um cérebro digital, mas por uma via diferente das redes neurais artificiais conhecidas. Em vez de disso, teremos uma malha 3D de neurônios que poderão se conectar e se comunicar de maneiras semelhantes às que temos na natureza. Essas estruturas são determinadas geneticamente. Através da simulação de agentes/organismos digitais em certos ambientes, suas estruturas neuronais irão evoluir com algoritmos genéticos. Com isso, esperamos obter estruturas mais orgânicas e, portanto, mais próximas de uma inteligência artificial geral.
-	
-\section{Estrutura do cérebro}
-	Cada cérebro é um tensor $a \times b \times c$, com $a, b, c \geq 2$ naturais. Cada nó deste tensor é um neurônio do cérebro. Alguns destes neurônios são responsáveis por receber sinais de input, outros são responsáveis por retornar os outputs, e os outros recebem e enviam sinais entre si. Há conexões entre os neurônios, mas não necessariamente todos estão conectados com todos, nem há a noção de "camadas"\ ("layers") como temos em redes neurais tradicionalmente. 
-	
-	Por haver conexão entre certos nós, podemos interpretar a estrutura cerebral não como um tensor, mas como um gráfo parcialmente conectado, em que cada nó é identificado por um tupla de 3 números.
-	
-	\begin{figure}[H]
-		\centering
-		\includegraphics[scale=1]{tensor} 
-		\caption{\footnotesize{Exemplo de estrutura de um possível cérebro. Note que os neurônios de inputs e outputs podem estar em qualquer lugar. a posição deles é definida geneticamente e não existe nenhum restrição sobre isso.}}
-	\end{figure}	
-	
-\section{Inputs}
-	Um input pode ser a temperatura do ambiente, uma percepção de força aplicada sobre determinada parte do corpo do agente, a velocidade do agente em alguma direção, etc. Basicamente qualquer percepção sensorial externa ou interna pode ser um input para o agente. Cada input é direcionada para um, e apenas um, neurônio deste agente. Se ter múltiplos neurônios recebendo o mesmo input é algo vantajoso, a própria evolução natural irá "descobrir"\ um cérebro onde esse único neurônio de input envia o sinal inalterado do input para outros neurônios. Com isso, o mesmo resultado é obtido sem intervenção forçada no design\footnote{É bom deixar claro logo que a proposta deste trabalho é obter estruturas cerebrais com o mínimo de intervenção possível. Se alguma certa estrutura for melhor que outras, ela deverá ser "descoberta"\ naturalmente em vez de imposta na metodologia.} do cérebro. 
-	
-\section{Outputs}
-	Os outputs são as possíveis ações que um agente pode executar. Todas estas ações devem ser definidas previamente. Similarmente aos inputs, cada output do agente está associado a um, e apenas um, neurônio. Cada um destes neurônios possui um threshold, que é um dos valores $ \{0.2,\ 0.4,\ 0.6,\ 0.8\}$. Seja $x$ o sinal recebido pelo neurônio de output. Se $\sigma(x) = 1 - e^{-\frac{x}{\kappa}}$ é maior que este threshold, então o agente irá executar a ação associada, em que $1 \leq \kappa \leq 4$ é uma constante definida geneticamente e associada ao cérebro.
-	
-\section{Envio de sinais}
-	Cada neurônio possui uma vizinhança de neurônios para os quais ele transmite sinais. Essa vizinhança é uma região retangular 3D que é determinada geneticamente. Cada neurônio possui uma região de dimensões próprias, ou seja, a região pode ter um tamanho diferente para cada neurônio. Vale ressaltar que neurônios de output também possuem estas regiões. Então, após este neurônio fazer com o que o agente execute uma ação, ele ainda transmite o sinal para outros neurônios. É como se o cérebro quisesse que mais neurônios fiquem cientes de que a ação foi realizada.
-	
-	Um input externo pode ser qualquer número real. Ao receber um input $x$, ele é convertido para o sinal $\hat{x} = \sigma(x)$. É assim que um input é recebido pelo neurônio de input. Cada neurônio conectado ao neurônio do input recebe este sinal como $\varepsilon \cdot \sigma(\hat{x})$, em que $\varepsilon$ é a força da conexão entre estes neurônios. Algumas observações se fazem necessárias aqui:
-	
+
+Redes neurais artificiais modernas são, em geral, construídas a partir de arquiteturas previamente especificadas: camadas, blocos, funções de ativação, operações matriciais e uma função objetivo que guia o ajuste de parâmetros. Esta abordagem é extraordinariamente eficaz em inúmeros domínios, mas impõe uma estrutura computacional fortemente projetada. Mesmo quando a arquitetura é grande e o treinamento é estatístico, boa parte da forma do sistema cognitivo é definida antes da experiência.
+
+O objetivo deste trabalho é explorar uma direção complementar: simular organismos digitais cujas estruturas neuronais não sejam organizadas em camadas, mas em uma malha tridimensional parcialmente conectada, geneticamente especificada e plasticamente modificável ao longo da vida. A hipótese metodológica não é que tal modelo seja imediatamente competitivo com redes neurais artificiais convencionais, mas que ele oferece um espaço experimental adequado para investigar formas mais orgânicas de adaptação, recorrência, memória, auto-organização e seleção ambiental.
+
+Neste modelo, um organismo digital, chamado aqui de \emph{blob}, possui um cérebro artificial. O cérebro é definido por um tensor discreto
+$$
+	B = [a] \times [b] \times [c],
+$$
+em que $[n]=\{0,1,\ldots,n-1\}$ e $a,b,c \in \N$. Cada elemento de $B$ representa um neurônio. Alguns neurônios recebem sinais sensoriais, alguns estão associados a ações motoras e os demais funcionam como neurônios internos. As conexões entre neurônios são direcionais, não necessariamente simétricas, e não seguem uma estrutura de camadas.
+
+A contribuição deste texto é formalizar o protótipo atual da simulação. O artigo descreve:
+
+\begin{enumerate}
+	\item a representação genética usada para gerar cérebros artificiais;
+	\item a transformação genótipo--fenótipo;
+	\item a dinâmica de sinais neuronais;
+	\item as regras de plasticidade estrutural e de enfraquecimento de conexões;
+	\item as regras de offspring por recombinação genética;
+	\item a metodologia de implementação em frontend Godot e backend Python.
+\end{enumerate}
+
+A simulação atual deve ser entendida como um protótipo exploratório. Não há, nesta versão, uma função fitness escalar global, retropropagação de gradiente ou aprendizado supervisionado. A pressão seletiva é ambiental: organismos que consomem energia sem encontrar comida morrem; organismos que sobrevivem tempo suficiente e colidem com outros organismos podem gerar descendentes.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.0cm]
+	\node[flowblock] (genoma) {Genoma discreto\\$\Sigma=\{0,1,2,3\}$};
+	\node[flowblock, right=2.0cm of genoma] (fenotipo) {Fenótipo cerebral\\tensor 3D + grafo dirigido};
+	\node[flowblock, below=2.0cm of fenotipo] (comportamento) {Comportamento\\movimento, rotação, consumo de energia};
+	\node[flowblock, left=1.5cm of comportamento] (ambiente) {Ambiente\\comida, colisões, população, seleção};
+	\draw[flowline] (genoma) -- (fenotipo);
+	\draw[flowline] (fenotipo) -- (comportamento);
+	\draw[flowline] (comportamento) -- (ambiente);
+	\draw[flowline] (ambiente) -- node[left, align=left]{sobrevivência\\e reprodução \ \ } (genoma);
+\end{tikzpicture}
+\caption{Ciclo conceitual do modelo: o genoma define o cérebro, o cérebro produz comportamento, o comportamento interage com o ambiente e o ambiente determina quais genomas persistem.}
+\label{fig:ciclo-conceitual}
+\end{figure}
+
+\section{Definições iniciais}
+
+\subsection{Espaço neuronal}
+
+Fixadas dimensões $a,b,c$, o conjunto de neurônios é
+$$
+	V_{a,b,c} = [a] \times [b] \times [c].
+$$
+Para fins de implementação, cada neurônio $(i,j,k) \in V_{a,b,c}$ é identificado por um índice linear
+$$
+	\alpha(i,j,k) = i + ja + kab.
+$$
+O conjunto de índices neuronais é, portanto,
+$$
+	\mathcal{V}_{a,b,c} = \{0,1,\ldots,abc-1\}.
+$$
+A transformação inversa é dada por
+$$
+	x(n)= n \bmod a,\qquad
+	y(n)= \left\lfloor\frac{n}{a}\right\rfloor \bmod b,\qquad
+	z(n)= \left\lfloor\frac{n}{ab}\right\rfloor.
+$$
+Assim, quando conveniente, identificamos o neurônio $n \in \mathcal{V}_{a,b,c}$ com a coordenada
+$$
+	\alpha^{-1}(n) = (x(n),y(n),z(n)).
+$$
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.95]
+	\begin{scope}[shift={(0,0)}]
+		\draw[thick] (0,0) rectangle (3,3);
+		\foreach \x in {1,2}{\draw[thin] (\x,0)--(\x,3);}
+		\foreach \y in {1,2}{\draw[thin] (0,\y)--(3,\y);}
+		\foreach \i in {0.5,1.5,2.5}{\foreach \j in {0.5,1.5,2.5}{\node[internode] at (\i,\j) {};}}
+		\node[font=\small] at (1.5,-0.45) {$z=0$};
+	\end{scope}
+	\begin{scope}[shift={(1.5,1.5)}]
+		\draw[thick] (0,0) rectangle (3,3);
+		\foreach \x in {1,2}{\draw[thin] (\x,0)--(\x,3);}
+		\foreach \y in {1,2}{\draw[thin] (0,\y)--(3,\y);}
+		\foreach \i in {0.5,1.5,2.5}{\foreach \j in {0.5,1.5,2.5}{\node[internode] at (\i,\j) {};}}
+		\node[font=\small] at (2.1,-0.45) {$z=1$};
+	\end{scope}
+	\begin{scope}[shift={(3.0,3.0)}]
+		\draw[thick] (0,0) rectangle (3,3);
+		\foreach \x in {1,2}{\draw[thin] (\x,0)--(\x,3);}
+		\foreach \y in {1,2}{\draw[thin] (0,\y)--(3,\y);}
+		\foreach \i in {0.5,1.5,2.5}{\foreach \j in {0.5,1.5,2.5}{\node[internode] at (\i,\j) {};}}
+		\node[font=\small] at (2.1,-0.45) {$z=2$};
+	\end{scope}
+	\node[inputnode] at (0.5,0.5) {};
+	\node[outputnode] at (4.5,3.5) {};
+	\draw[flowline] (0.5,0.5) .. controls (1.3,1.1) and (2.2,1.7) .. (3.2,2.3);
+	\draw[flowline] (3.2,2.3) .. controls (3.7,2.7) and (4.0,3.0) .. (4.3,3.5);
+	\node[boxnote, anchor=west, minimum width=4.5cm, minimum height=2.1cm] (legenda) at (6.2,2.3) {};
+	\node[anchor=west, font=\small\bfseries] at (7.25,3.0) {Legenda};
+	\node[inputnode] at (6.5,2.5) {};
+	\node[anchor=west, font=\small] at (6.75,2.5) {neurônio de input};
+	\node[outputnode] at (6.5,2.0) {};
+	\node[anchor=west, font=\small] at (6.75,2.0) {neurônio de output};
+	\node[internode] at (6.5,1.5) {};
+	\node[anchor=west, font=\small] at (6.75,1.5) {neurônio interno};
+\end{tikzpicture}
+\caption{Representação didática de um cérebro como tensor tridimensional. Em cada plano $z$ há uma malha de neurônios; alguns neurônios são especializados como inputs e outputs, enquanto os demais são internos. As setas ilustram conexões direcionais.}
+\label{fig:tensor-cerebral}
+\end{figure}
+
+\subsection{Grafo cerebral}
+
+O cérebro de um organismo é representado por um grafo direcionado
+$$
+	G = (\mathcal{V},E),
+$$
+em que $\mathcal{V}=\mathcal{V}_{a,b,c}$ e
+$$
+	E \subseteq \mathcal{V}\times\mathcal{V}.
+$$
+Uma aresta $(u,v)\in E$ indica que o neurônio $u$ envia sinal ao neurônio $v$. O modelo assume que, para qualquer par $\{u,v\}$, não devem coexistir as duas direções:
+$$
+	(u,v)\in E \implies (v,u)\notin E.
+$$
+Esta restrição torna a conexão direcional e evita conexões recíprocas imediatas.
+
+Cada conexão $(u,v)$ possui uma força sináptica
+$$
+	\varepsilon_{uv}(t) \in \R_{\geq 0}.
+$$
+No nascimento do organismo, todas as conexões existentes iniciam com força
+$$
+	\varepsilon_{uv}(0)=1.
+$$
+
+\subsection{Inputs, outputs e sinais}
+
+Sejam $N_I$ o número de inputs e $N_O$ o número de outputs. Os neurônios de input formam uma lista
+$$
+	I=(i_1,\ldots,i_{N_I}) \subset \mathcal{V},
+$$
+e os neurônios de output formam uma lista
+$$
+	O=(o_1,\ldots,o_{N_O}) \subset \mathcal{V}.
+$$
+A geração genética exige que:
+$$
+	i_p \neq i_q\quad(p\neq q),\qquad
+	o_p \neq o_q\quad(p\neq q),\qquad
+	I\cap O=\varnothing.
+$$
+Logo, cada input é associado a exatamente um neurônio, cada output é associado a exatamente um neurônio, e nenhum neurônio pode ser simultaneamente input e output.
+
+O estado neuronal no instante $t$ é uma função esparsa
+$$
+	s_t:\mathcal{V}\to \R_{\geq 0},
+$$
+na qual $s_t(u)$ é o sinal armazenado no neurônio $u$. Na implementação, apenas neurônios com algum sinal já registrado precisam aparecer explicitamente no dicionário de sinais.
+
+A função de saturação usada para normalizar sinais é
+$$
+	\sigma_\kappa(x)=1-e^{-x/\kappa},
+$$
+em que $\kappa\in\{1,2,3,4\}$ é um parâmetro geneticamente definido. Note que, para $x\geq0$, temos $0\leq \sigma_\kappa(x)<1$.
+
+\begin{table}[H]
+\centering
+\caption{Objetos básicos do modelo e sua interpretação.}
+\label{tab:objetos}
+\begin{tabular}{p{2.6cm}p{4.2cm}p{7.2cm}}
+\toprule
+Objeto & Notação & Interpretação \\
+\midrule
+Cérebro & $B=[a]\times[b]\times[c]$ & malha tridimensional de neurônios \\
+Grafo & $G=(\mathcal{V},E)$ & estrutura efetiva de conectividade dirigida \\
+Inputs & $I=(i_1,\ldots,i_{N_I})$ & neurônios que recebem sinais sensoriais \\
+Outputs & $O=(o_1,\ldots,o_{N_O})$ & neurônios que determinam ações motoras \\
+Sinal neuronal & $s_t(u)$ & intensidade armazenada no neurônio $u$ no instante $t$ \\
+Força sináptica & $\varepsilon_{uv}(t)$ & intensidade da conexão dirigida $(u,v)$ \\
+Threshold interno & $\theta_u$ & limiar de disparo do neurônio $u$ \\
+Threshold de output & $\Theta^{out}_{o_r}$ & limiar para ativar a ação associada a $o_r$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Representação genética}
+
+\subsection{Alfabeto genético}
+
+O genoma é definido sobre o alfabeto discreto
+$$
+	\SigmaGen=\{0,1,2,3\}.
+$$
+Opcionalmente, estes símbolos podem ser interpretados como
+$$
+	0\mapsto A,\qquad 1\mapsto T,\qquad 2\mapsto C,\qquad 3\mapsto G.
+$$
+Essa interpretação é apenas simbólica. Na implementação, os genes são manipulados como inteiros em $\{0,1,2,3\}$.
+
+Dada uma palavra genética
+$$
+	w=(w_1,\ldots,w_m)\in\SigmaGen^m,
+$$
+define-se a conversão decimal
+$$
+	D_m(w)=\sum_{\ell=1}^{m} w_\ell 10^{m-\ell}.
+$$
+Observe que $D_m$ não interpreta a palavra como número em base 4. Ela concatena os símbolos como dígitos decimais restritos a $0,1,2,3$. Por exemplo,
+$$
+	D_5(1,0,3,2,1)=10321.
+$$
+
+Também será usada a aplicação
+$$
+	\mu:\SigmaGen\to\{0.2,0.4,0.6,0.8\},\qquad
+	\mu(q)=\frac{q+1}{5}.
+$$
+
+\subsection{Parâmetros globais}
+
+A implementação atual usa os parâmetros constantes da Tabela \ref{tab:parametros}.
+
+\begin{table}[H]
+\centering
+\caption{Parâmetros globais do modelo atual.}
+\label{tab:parametros}
+\begin{tabular}{lll}
+\toprule
+Símbolo & Valor & Significado \\
+\midrule
+$N_I$ & $16$ & número de inputs sensoriais \\
+$N_O$ & $4$ & número de outputs motores \\
+$D$ & $5$ & tamanho de palavra para coordenadas de input/output \\
+$D_2$ & $2$ & tamanho de palavra para regiões e coordenadas locais \\
+$D_3$ & $6$ & tamanho de palavra para o decay \\
+$D_4$ & $4$ & tamanho de palavra para número inicial de conexões \\
+$A_{\min},A_{\max}$ & $4,7$ & limites da primeira dimensão cerebral \\
+$B_{\min},B_{\max}$ & $4,7$ & limites da segunda dimensão cerebral \\
+$C_{\min},C_{\max}$ & $4,7$ & limites da terceira dimensão cerebral \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Genoma completo}
+
+O genoma de um organismo recém-gerado pode ser escrito como
+$$
+	\mathcal{G}=
+	(G_{\dim},
+	G_I,
+	G_O,
+	G_{O,\theta},
+	G_R,
+	G_Q,
+	G_E,
+	G_P,
+	G_\theta,
+	G_\delta,
+	G_\tau,
+	G_\kappa,
+	G_\omega).
+$$
+Cada componente codifica uma parte do fenótipo cerebral:
+
+\begin{table}[H]
+\centering
+\caption{Componentes genéticos e respectivos fenótipos.}
+\label{tab:genes}
+\begin{tabular}{p{3.1cm}p{4.4cm}p{7.2cm}}
+\toprule
+Gene & Forma & Fenótipo associado \\
+\midrule
+$G_{\dim}$ & $\SigmaGen^{3\times D}$ & dimensões $(a,b,c)$ \\
+$G_I$ & $\SigmaGen^{N_I\times 3D}$ & neurônios de input \\
+$G_O$ & $\SigmaGen^{N_O\times 3D}$ & neurônios de output \\
+$G_{O,\theta}$ & $\SigmaGen^{N_O}$ & thresholds dos outputs \\
+$G_R$ & $\SigmaGen^{abc\times 3D_2}$ & regiões locais de conectividade \\
+$G_Q$ & $\SigmaGen^{D_4}$ & número máximo de candidatos iniciais por neurônio \\
+$G_E$ & dicionário de palavras em $\SigmaGen^{3D_2}$ & candidatos a conexões iniciais \\
+$G_P$ & $\SigmaGen^{abc}$ & probabilidades de criação de novas conexões \\
+$G_\theta$ & $\SigmaGen^{abc}$ & thresholds de disparo neuronal \\
+$G_\delta$ & $\SigmaGen^{D_3}$ & decaimento de força sináptica \\
+$G_\tau$ & $\SigmaGen^{D_2}$ & período de inatividade pós-disparo \\
+$G_\kappa$ & $\SigmaGen^{D_2}$ & fator de saturação da resposta exponencial \\
+$G_\omega$ & $\SigmaGen^{D_2}$ & gene reservado para período enfraquecido \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+O gene $G_\omega$ é preservado na especificação porque já existe na implementação, mas seu fenótipo ainda não é usado na dinâmica atual.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.2cm]
+	\node[flowblock] (g) {Genoma $\mathcal{G}$};
+	\node[flowblock, below left=1.2cm and 1.6cm of g] (estrut) {Estrutura\\$a,b,c$, $I$, $O$, $E$};
+	\node[flowblock, below=1.2cm of g] (dinam) {Dinâmica\\$\theta_u$, $\Theta^{out}$, $\delta$, $\tau$, $\kappa$};
+	\node[flowblock, below right=1.2cm and 1.6cm of g] (plast) {Plasticidade\\regiões e probabilidades $p_u$};
+	\node[flowblock, below=2.8cm of g] (feno) {Fenótipo completo do cérebro};
+	\draw[flowline] (g) -- (estrut);
+	\draw[flowline] (g) -- (dinam);
+	\draw[flowline] (g) -- (plast);
+	\draw[flowline] (estrut) -- (feno);
+	\draw[flowline] (dinam) -- (feno);
+	\draw[flowline] (plast) -- (feno);
+\end{tikzpicture}
+\caption{Decomposição didática do genoma em três grupos funcionais: genes estruturais, genes dinâmicos e genes de plasticidade.}
+\label{fig:decomposicao-genoma}
+\end{figure}
+
+\section{Regras genéticas de geração do cérebro}
+
+Esta seção descreve a construção de um cérebro a partir de um genoma aleatório. A geração é rejeitada e repetida quando as restrições estruturais de inputs e outputs não são satisfeitas.
+
+\subsection{Dimensões}
+
+Sejam
+$$
+	G_{\dim}=
+	\begin{pmatrix}
+		g^a_1 & \cdots & g^a_D\\
+		g^b_1 & \cdots & g^b_D\\
+		g^c_1 & \cdots & g^c_D
+	\end{pmatrix}.
+$$
+As dimensões do cérebro são
+$$
+	a=\max\{A_{\min},\,D_D(g^a_1,\ldots,g^a_D)\bmod(A_{\max}+1)\},
+$$
+$$
+	b=\max\{B_{\min},\,D_D(g^b_1,\ldots,g^b_D)\bmod(B_{\max}+1)\},
+$$
+$$
+	c=\max\{C_{\min},\,D_D(g^c_1,\ldots,g^c_D)\bmod(C_{\max}+1)\}.
+$$
+Na configuração atual, $a,b,c\in\{4,5,6,7\}$ e o número de neurônios é
+$$
+	M=abc.
+$$
+
+\subsection{Mapeamento genético para coordenadas}
+
+Dada uma palavra
+$$
+	w=(w^x,w^y,w^z)\in\SigmaGen^{3m},
+$$
+com blocos $w^x,w^y,w^z\in\SigmaGen^m$, define-se
+$$
+	\Phi_{a,b,c}^{(m)}(w)
+	=
+	\alpha\big(
+	D_m(w^x)\bmod a,\,
+	D_m(w^y)\bmod b,\,
+	D_m(w^z)\bmod c
+	\big).
+$$
+Esta função transforma uma palavra genética em um índice neuronal.
+
+\subsection{Neurônios de input}
+
+Para cada input $r\in\{1,\ldots,N_I\}$, a linha $G_I[r]$ define
+$$
+	i_r = \Phi_{a,b,c}^{(D)}(G_I[r]).
+$$
+O conjunto/lista de inputs só é aceito se
+$$
+	\card\{i_1,\ldots,i_{N_I}\}=N_I.
+$$
+Se dois inputs forem mapeados para o mesmo neurônio, o cérebro é rejeitado e um novo genoma é gerado.
+
+\subsection{Neurônios de output}
+
+Analogamente, para cada output $r\in\{1,\ldots,N_O\}$,
+$$
+	o_r = \Phi_{a,b,c}^{(D)}(G_O[r]).
+$$
+Os outputs são aceitos apenas se
+$$
+	\card\{o_1,\ldots,o_{N_O}\}=N_O
+$$
+e
+$$
+	\{o_1,\ldots,o_{N_O}\}\cap\{i_1,\ldots,i_{N_I}\}=\varnothing.
+$$
+Se alguma destas condições falhar, o cérebro é rejeitado.
+
+\subsection{Thresholds de output}
+
+Cada neurônio de output recebe um threshold
+$$
+	\Theta^{out}_{o_r} = \mu(G_{O,\theta}[r]).
+$$
+Logo,
+$$
+	\Theta^{out}_{o_r}\in\{0.2,0.4,0.6,0.8\}.
+$$
+Na leitura dos outputs, o output $r$ será ativado se
+$$
+	\sigma_\kappa(s(o_r))>\Theta^{out}_{o_r}.
+$$
+
+\subsection{Regiões locais de conectividade}
+
+Cada neurônio $u=\alpha(i,j,k)$ possui uma região retangular local determinada geneticamente. Seja $G_R[u]\in\SigmaGen^{3D_2}$ dividido em três blocos. Define-se
+$$
+	R_x(u)=D_{D_2}(G_R^x[u])\bmod a,
+$$
+$$
+	R_y(u)=D_{D_2}(G_R^y[u])\bmod b,
+$$
+$$
+	R_z(u)=D_{D_2}(G_R^z[u])\bmod c.
+$$
+A região nominal de conectividade de $u$ é
+$$
+	\mathcal{R}(u)=
+	\left\{
+		\alpha(p,q,r):
+		|p-i|\leq R_x(u),\,
+		|q-j|\leq R_y(u),\,
+		|r-k|\leq R_z(u)
+	\right\},
+$$
+com as coordenadas restritas aos limites do tensor cerebral.
+
+A interpretação biológica aproximada é que cada neurônio possui um alcance local próprio. Não há, portanto, um raio global fixo para todo o cérebro.
+
+\subsection{Conexões iniciais}
+
+O gene $G_Q\in\SigmaGen^{D_4}$ determina o número de candidatos iniciais por neurônio:
+$$
+	Q = D_{D_4}(G_Q)\bmod(M-1).
+$$
+Para cada neurônio $u=\alpha(i,j,k)$, são geradas $Q$ palavras candidatas
+$$
+	G_E[u,1],\ldots,G_E[u,Q]\in\SigmaGen^{3D_2}.
+$$
+Cada candidata define um possível destino
+$$
+	v_w=\Phi_{a,b,c}^{(D_2)}(G_E[u,w]).
+$$
+A conexão $(u,v_w)$ é adicionada se, e somente se, as quatro condições abaixo forem satisfeitas:
+$$
+	v_w\notin E(u),
+$$
+$$
+	(v_w,u)\notin E,
+$$
+$$
+	v_w\in\mathcal{R}(u),
+$$
+$$
+	u\neq v_w \quad\text{ou, caso se admita auto-conexão, ela não viole as demais restrições.}
+$$
+Na implementação atual, a verificação explícita impede duplicidade e conexão reversa; auto-conexões não são destacadas como um caso especial. A estrutura efetiva é o conjunto de conexões aceitas após essas filtragens.
+
+\subsection{Probabilidade de plasticidade estrutural}
+
+Cada neurônio recebe uma probabilidade de criação de novas conexões:
+$$
+	p_u=\mu(G_P[u])\in\{0.2,0.4,0.6,0.8\}.
+$$
+Esse parâmetro é usado durante a vida do organismo, quando o neurônio dispara e tenta criar uma nova conexão com outro neurônio ativo em sua região.
+
+\subsection{Threshold de disparo neuronal}
+
+Cada neurônio recebe um threshold de disparo:
+$$
+	\theta_u=\mu(G_\theta[u])\in\{0.2,0.4,0.6,0.8\}.
+$$
+Um neurônio $u$ só propaga sinal quando
+$$
+	s_t(u)>\theta_u
+$$
+e quando não está em período de inatividade.
+
+\subsection{Decaimento sináptico}
+
+O gene de decay é uma palavra
+$$
+	G_\delta=(d_1,\ldots,d_{D_3})\in\SigmaGen^{D_3}.
+$$
+Define-se
+$$
+	\delta = \sum_{\ell=1}^{D_3}d_\ell 10^{-\ell}.
+$$
+Equivalentemente, $\delta$ é o número decimal $0.d_1d_2\ldots d_{D_3}$. Como $d_\ell\in\{0,1,2,3\}$, no protótipo atual $\delta$ está no intervalo
+$$
+	0\leq \delta \leq 0.333333.
+$$
+A cada atualização, conexões internas podem ter sua força reduzida por
+$$
+	\delta^2.
+$$
+
+\subsection{Inatividade pós-disparo}
+
+O período de inatividade é
+$$
+	\tau=D_{D_2}(G_\tau)+1.
+$$
+Este valor define o contador usado para impedir que um neurônio dispare continuamente em iterações consecutivas. Após disparar, o neurônio entra em um estado refratário controlado por esse contador.
+
+\subsection{Fator exponencial}
+
+O parâmetro da função de saturação é
+$$
+	\kappa=\left\lfloor\frac{D_{D_2}(G_\kappa)}{10}\right\rfloor +1.
+$$
+Como $D_{D_2}(G_\kappa)$ varia de $0$ a $33$, segue que
+$$
+	\kappa\in\{1,2,3,4\}.
+$$
+
+\subsection{Gene reservado para enfraquecimento temporário}
+
+O gene
+$$
+	G_\omega\in\SigmaGen^{D_2}
+$$
+define, na implementação atual, o valor
+$$
+	\omega=\tau+D_{D_2}(G_\omega)+1.
+$$
+Entretanto, $\omega$ ainda não participa da dinâmica de sinais. Ele é mantido como parâmetro reservado para uma possível extensão em que neurônios recém-disparados tenham um período enfraquecido distinto do período inativo.
+
+\subsection{Algoritmo de geração genética}
+
+\algoritmo{Geração de um cérebro novo}
+
+\begin{enumerate}
+	\item Amostrar todos os genes de $\mathcal{G}$ de forma independente e uniforme em $\SigmaGen$.
+	\item Calcular $(a,b,c)$ a partir de $G_{\dim}$.
+	\item Construir os neurônios de input $I$ a partir de $G_I$.
+	\item Se houver colisão entre inputs, rejeitar o genoma e reiniciar.
+	\item Construir os neurônios de output $O$ a partir de $G_O$.
+	\item Se houver colisão entre outputs, rejeitar o genoma e reiniciar.
+	\item Se $I\cap O\neq\varnothing$, rejeitar o genoma e reiniciar.
+	\item Calcular thresholds de output, regiões locais, número inicial de candidatos, conexões iniciais, probabilidades de plasticidade, thresholds internos, decay, inatividade e fator exponencial.
+	\item Inicializar todos os sinais neuronais como vazios.
+	\item Inicializar todas as forças sinápticas existentes como $1$.
+	\item Inicializar o contador de inatividade de cada neurônio com valor $\tau$.
+	\item Retornar o genoma simbólico $\mathcal{G}$ e o fenótipo cerebral resultante.
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=1.0cm and 1.0cm]
+	\node[flowblock] (start) {Início};
+	\node[flowblock, right=1.3cm of start] (sample) {Amostra aleatória\\de todos os genes};
+	\node[flowblock, right=1.3cm of sample] (dims) {Calcular\\$a,b,c$};
+	\node[flowblock, below=1.3cm of dims] (inputs) {Construir\\neurônios de input};
+	\node[flowdecision, left=1.8cm of inputs] (din) {Inputs\\distintos?};
+	\node[flowblock, below=1.3cm of din] (outputs) {Construir\\neurônios de output};
+	\node[flowdecision, right=1.8cm of outputs] (dout) {Outputs distintos\\e disjuntos de $I$?};
+	\node[flowblock, below=1.3cm of outputs] (resto) {Derivar restante\\do fenótipo};
+	\node[flowblock, below=1.3cm of resto] (init) {Inicializar sinais,\\forças e contadores};
+	\node[flowblock, below=1.3cm of init] (end) {Retornar cérebro};
+
+	\draw[flowline] (start) -- (sample);
+	\draw[flowline] (sample) -- (dims);
+	\draw[flowline] (dims) -- (inputs);
+	\draw[flowline] (inputs) -- (din);
+	\draw[flowline] (din) -- node[left]{sim} (outputs);
+	\draw[flowline] (outputs) -- (dout);
+	\draw[flowline] (dout) -- node[right]{sim} (resto);
+	\draw[flowline] (resto) -- (init);
+	\draw[flowline] (init) -- (end);
+	\draw[flowline] (din.west) -- ++(-1.5,0) node[above]{não} |- (sample.south);
+	\draw[flowline] (dout.east) -- ++(1.5,0) node[above]{não} |- (sample.south);
+\end{tikzpicture}}
+\caption{Fluxograma do Algoritmo 1. A geração genética é um procedimento de amostragem com rejeição: sempre que há colisão entre inputs ou inválida separação input/output, o genoma é descartado e um novo é amostrado.}
+\label{fig:fluxo-gen-brain}
+\end{figure}
+
+\section{Dinâmica neuronal}
+
+\subsection{Estrutura de estado}
+
+Para cada organismo, a simulação mantém:
+
+\begin{itemize}
+	\item o conjunto de conexões $E_t$;
+	\item as forças sinápticas $\varepsilon_{uv}(t)$;
+	\item os sinais neuronais $s_t(u)$;
+	\item os contadores de inatividade $c_t(u)$;
+	\item o número corrente de conexões.
+\end{itemize}
+
+O processamento de um passo neuronal recebe um vetor de inputs externos
+$$
+	X_t=(X_t^1,\ldots,X_t^{N_I})\in\R_{\geq 0}^{N_I}
+$$
+e retorna um vetor binário de outputs
+$$
+	Y_t=(Y_t^1,\ldots,Y_t^{N_O})\in\{0,1\}^{N_O}.
+$$
+
+\subsection{Propagação entre neurônios}
+
+Considere um neurônio $u$ com sinal $s_t(u)>0$. Ele dispara se
+$$
+	s_t(u)>\theta_u
+$$
+e
+$$
+	c_t(u)=\tau.
+$$
+Quando dispara, o sinal efetivamente enviado é
+$$
+	\widehat{s}_t(u)=\sigma_\kappa(s_t(u)).
+$$
+Para cada conexão $(u,v)\in E_t$, define-se a força atualizada por uso:
+$$
+	\widetilde{\varepsilon}_{uv}(t)=\frac{1+\varepsilon_{uv}(t)}{2}.
+$$
+Então
+$$
+	\varepsilon_{uv}(t)\leftarrow \widetilde{\varepsilon}_{uv}(t)
+$$
+e o neurônio $v$ recebe contribuição
+$$
+	\Delta s(v) \leftarrow \Delta s(v)+\widetilde{\varepsilon}_{uv}(t)\widehat{s}_t(u).
+$$
+Após transmitir, o neurônio $u$ é marcado para zeragem:
+$$
+	s_{t+1}(u)\leftarrow 0,
+$$
+salvo se receber outro sinal agregado no mesmo passo.
+
+\subsection{Plasticidade estrutural}
+
+Após um disparo, o neurônio $u$ tenta criar uma nova conexão. Seja
+$$
+	\mathcal{C}_t(u)\subseteq\mathcal{R}(u)
+$$
+um conjunto de candidatos amostrados dentro da região local de $u$. Na implementação, por economia computacional, a busca percorre uma amostra de aproximadamente metade dos pontos de cada eixo da região, em vez de percorrer a região completa.
+
+Para cada candidato $v\in\mathcal{C}_t(u)$, uma nova conexão $(u,v)$ é criada se:
+
+$$
+	U\leq p_u,\qquad U\sim \operatorname{Uniforme}(0,1),
+$$
+$$
+	v\in\operatorname{dom}(s_t),
+$$
+$$
+	s_t(v)>0,
+$$
+$$
+	(u,v)\notin E_t,
+$$
+$$
+	(v,u)\notin E_t.
+$$
+Quando tais condições são satisfeitas,
+$$
+	E_{t+1}\leftarrow E_t\cup\{(u,v)\},
+$$
+$$
+	\varepsilon_{uv}(t+1)=1.
+$$
+A regra cria no máximo uma nova conexão por disparo de neurônio.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.2cm]
+	\node[internode, label=above:{neurônio $u$}] (u) at (0,0) {};
+	\draw[thick, dashed] (-2.0,-1.6) rectangle (2.2,1.6);
+	\node[font=\small] at (0,1.95) {região local $\mathcal{R}(u)$};
+	\foreach \x/\y/\name in {-1.4/0.8/a,-0.7/-0.9/b,0.5/0.9/c,1.4/-0.6/d,1.7/0.3/e}{
+		\node[internode] (\name) at (\x,\y) {};
+	}
+	\node[inputnode] (iin) at (-1.5,-0.1) {};
+	\node[outputnode] (oout) at (0.9,-1.1) {};
+	\draw[flowline] (u) -- (a);
+	\draw[flowline] (u) -- (d);
+	\draw[dotted, thick] (u) -- (c);
+	\node[boxnote, anchor=west] at (4.2,0.0) {
+	\begin{tabular}{@{}l@{}}
+	\textbf{Leitura didática}\\
+	Linhas contínuas: conexões já existentes\\
+	Linha pontilhada: conexão candidata\\
+	A candidata só nasce se o neurônio alvo\\
+	estiver ativo, estiver na região local,\\
+	não houver duplicidade e a amostra\\
+	probabilística for bem-sucedida.
+	\end{tabular}};
+\end{tikzpicture}
+\caption{Esquema da plasticidade estrutural local. Um neurônio ativo tenta criar uma nova conexão apenas dentro de sua região genética de conectividade.}
+\label{fig:plasticidade-local}
+\end{figure}
+
+\subsection{Atualização do contador de inatividade}
+
+Quando um neurônio dispara, seu contador é reduzido. Enquanto o contador for diferente de $\tau$, ele continua sendo decrementado a cada passo. Se o contador se torna negativo, ele é restaurado para $\tau$. Em forma algorítmica:
+
+$$
+	c(u)\leftarrow c(u)-1 \quad\text{no disparo},
+$$
+e, ao final da avaliação do neurônio,
+$$
+	c(u)\neq\tau \implies c(u)\leftarrow c(u)-1,
+$$
+$$
+	c(u)<0 \implies c(u)\leftarrow\tau.
+$$
+
+Esse mecanismo funciona como um período refratário discreto. A duração efetiva depende de $\tau$ e da ordem exata de atualização.
+
+\subsection{Enfraquecimento de conexões}
+
+Após a tentativa de disparo e de plasticidade estrutural, as conexões de $u$ são enfraquecidas. A regra atual preserva todas as conexões que envolvem neurônios de input ou output. Portanto, uma conexão $(u,v)$ só sofre decay se
+$$
+	u\notin I\cup O
+	\qquad\text{e}\qquad
+	v\notin I\cup O.
+$$
+Nesse caso,
+$$
+	\varepsilon_{uv}(t+1)=\varepsilon_{uv}(t)-\delta^2.
+$$
+Se
+$$
+	\varepsilon_{uv}(t+1)<0,
+$$
+a conexão é removida:
+$$
+	E_{t+1}\leftarrow E_{t+1}\setminus\{(u,v)\}.
+$$
+
+Essa regra implementa uma competição estrutural: conexões internas pouco usadas tendem a desaparecer, enquanto conexões usadas têm sua força elevada em direção a $1$ pela regra
+$$
+	\varepsilon\mapsto\frac{1+\varepsilon}{2}.
+$$
+
+\subsection{Injeção dos inputs externos}
+
+Depois da propagação interna, os inputs externos são injetados nos neurônios de input. Para cada $r\in\{1,\ldots,N_I\}$,
+$$
+	s(i_r)\leftarrow \sigma_\kappa(X_t^r).
+$$
+Assim, sinais sensoriais são normalizados pela mesma resposta exponencial usada na dinâmica interna.
+
+\subsection{Leitura dos outputs}
+
+Após a injeção dos inputs, os outputs são lidos. Para cada $r\in\{1,\ldots,N_O\}$,
+$$
+	Y_t^r=
+	\begin{cases}
+		1, & \text{se } o_r\in\operatorname{dom}(s)\text{ e }\sigma_\kappa(s(o_r))>\Theta^{out}_{o_r},\\
+		0, & \text{caso contrário.}
+	\end{cases}
+$$
+Na implementação atual há quatro outputs motores:
+
+\begin{table}[H]
+\centering
+\caption{Interpretação dos outputs no ambiente bidimensional.}
+\label{tab:outputs}
+\begin{tabular}{cl}
+\toprule
+Output & Ação \\
+\midrule
+$Y^1$ & movimento para frente na direção da rotação atual \\
+$Y^2$ & movimento para trás em relação à rotação atual \\
+$Y^3$ & rotação positiva \\
+$Y^4$ & rotação negativa \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Algoritmo de processamento neuronal}
+
+\algoritmo{Processamento de um organismo em um passo}
+
+\begin{enumerate}
+	\item Receber o vetor de inputs externos $X_t$.
+	\item Criar um acumulador temporário $\Delta s$ vazio.
+	\item Criar uma lista $Z$ de neurônios que serão zerados após disparar.
+	\item Para cada neurônio $u$ atualmente presente no dicionário de sinais:
 	\begin{enumerate}
-		\item Só existe uma conexão entre dois neurônios, e ela é direcional. Ou seja, se o neurônio A envia sinais para B, então B não consegue enviar sinais para A. Todas estas conexões são determinadas geneticamente, mas elas podem ser alteradas ao longo da vida do agente. Falaremos mais disso adiante.
-		\item A força das conexões começa sendo igual a $1$ para todas as conexões. Ao longo da vida do agente estas forças são atualizadas induvidualmente, podendo aumentar ou diminuir conforme a conexão é muito ou pouco utilizada. 
+		\item Se $s(u)>\theta_u$ e $c(u)=\tau$, então:
+		\begin{enumerate}
+			\item calcular $\widehat{s}(u)=\sigma_\kappa(s(u))$;
+			\item adicionar $u$ à lista $Z$;
+			\item para cada conexão $(u,v)$, atualizar $\varepsilon_{uv}\leftarrow(1+\varepsilon_{uv})/2$ e acumular $\Delta s(v)\leftarrow\Delta s(v)+\varepsilon_{uv}\widehat{s}(u)$;
+			\item tentar criar uma nova conexão partindo de $u$.
+		\end{enumerate}
+		\item Atualizar o contador de inatividade de $u$.
+		\item Aplicar decay às conexões internas de $u$.
 	\end{enumerate}
-	
+	\item Para cada $u\in Z$, definir $s(u)\leftarrow0$.
+	\item Para cada $v$ em $\Delta s$, definir $s(v)\leftarrow\Delta s(v)$.
+	\item Injetar os inputs externos nos neurônios $i_1,\ldots,i_{N_I}$.
+	\item Ler os outputs $o_1,\ldots,o_{N_O}$.
+	\item Retornar o vetor binário $Y_t$.
+\end{enumerate}
 
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=1.0cm and 1.0cm]
+	\node[flowblock] (r1) {Receber $X_t$};
+	\node[flowblock, right=1.4cm of r1] (r2) {Criar $\Delta s$ e lista $Z$};
+	\node[flowblock, right=1.4cm of r2] (r3) {Percorrer neurônios\\com sinal};
+	\node[flowdecision, below=1.3cm of r3] (d1) {$s(u)>\theta_u$\\e $c(u)=\tau$?};
+	\node[flowblock, left=2.0cm of d1] (r4) {Saturar sinal,\\propagar, fortalecer\\e tentar nova conexão};
+	\node[flowblock, right=2.0cm of d1] (r5) {Atualizar contador\\e aplicar decay};
+	\node[flowdecision, below=1.4cm of d1] (d2) {Há mais neurônios\\a percorrer?};
+	\node[flowblock, below=1.4cm of d2] (r6) {Zerar neurônios\\em $Z$};
+	\node[flowblock, below=1.2cm of r6] (r7) {Aplicar $\Delta s$};
+	\node[flowblock, below=1.2cm of r7] (r8) {Injetar inputs\\externos};
+	\node[flowblock, below=1.2cm of r8] (r9) {Ler outputs\\$Y_t$};
+	\node[flowblock, below=1.2cm of r9] (r10) {Retornar $Y_t$};
 
-			
+	\draw[flowline] (r1) -- (r2);
+	\draw[flowline] (r2) -- (r3);
+	\draw[flowline] (r3) -- (d1);
+	\draw[flowline] (d1) -- node[above]{sim} (r4);
+	\draw[flowline] (d1) -- node[above]{não} (r5);
+	\draw[flowline] (r4) |- (r5);
+	\draw[flowline] (r5) -- (d2);
+	\draw[flowline] (d2) -- node[right]{não} (r6);
+	\draw[flowline] (r6) -- (r7);
+	\draw[flowline] (r7) -- (r8);
+	\draw[flowline] (r8) -- (r9);
+	\draw[flowline] (r9) -- (r10);
+	\draw[flowline] (d2.west) -- ++(-2.0,0) node[above]{sim} |- (r3.south);
+\end{tikzpicture}}
+\caption{Fluxograma do Algoritmo 2. O processamento neuronal combina atualização interna, plasticidade, injeção sensorial e leitura de outputs em um único passo discreto.}
+\label{fig:fluxo-processamento}
+\end{figure}
+
+\section{Regras de offspring}
+
+\subsection{Evento reprodutivo}
+
+A reprodução é disparada pelo ambiente quando dois blobs colidem e satisfazem as condições comportamentais impostas pela simulação: idade mínima, limite de filhos, cooldown e limite populacional. Quando a reprodução é solicitada, o backend recebe os identificadores de dois organismos pais, digamos $P_1$ e $P_2$.
+
+Se algum dos pais não estiver registrado no conjunto de organismos vivos mantido pelo backend, o offspring falha. Caso contrário, tenta-se gerar um filho por recombinação genética. No protótipo atual, a geração é tentada no máximo duas vezes; se as restrições de validade falharem repetidamente, nenhum filho é retornado.
+
+\subsection{Dimensões do filho}
+
+Sejam
+$$
+	(a_1,b_1,c_1),\qquad (a_2,b_2,c_2)
+$$
+as dimensões dos pais. As dimensões do filho são amostradas uniformemente nos intervalos fechados entre os valores parentais:
+$$
+	a_h\sim\UnifInt(\min(a_1,a_2),\max(a_1,a_2)),
+$$
+$$
+	b_h\sim\UnifInt(\min(b_1,b_2),\max(b_1,b_2)),
+$$
+$$
+	c_h\sim\UnifInt(\min(c_1,c_2),\max(c_1,c_2)).
+$$
+O número de neurônios do filho é
+$$
+	M_h=a_hb_hc_h.
+$$
+
+\subsection{Operador de corte}
+
+Para recombinar blocos de tamanho $L$, define-se um ponto de corte
+$$
+	\rho_L\sim\UnifInt(\lfloor0.4L\rfloor,\lfloor0.6L\rfloor).
+$$
+A operação de crossover por corte é
+$$
+	\operatorname{cross}(A,B;\rho_L)_r=
+	\begin{cases}
+		A_r, & r<\rho_L,\\
+		B_r, & r\geq\rho_L.
+	\end{cases}
+$$
+A implementação usa esse padrão para genes de input, output, thresholds de output, regiões, conexões iniciais, probabilidades e thresholds internos, com adaptações quando o filho possui mais neurônios que os pais.
+
+\subsection{Inputs do filho}
+
+Escolhe-se
+$$
+	\rho_I\sim\UnifInt(\lfloor0.4N_I\rfloor,\lfloor0.6N_I\rfloor).
+$$
+O gene de inputs do filho é
+$$
+	G_I^h[r]=
+	\begin{cases}
+		G_I^{P_1}[r], & r<\rho_I,\\
+		G_I^{P_2}[r], & r\geq\rho_I.
+	\end{cases}
+$$
+Em seguida, cada linha é reinterpretada nas dimensões do filho:
+$$
+	i_r^h=\Phi_{a_h,b_h,c_h}^{(D)}(G_I^h[r]).
+$$
+A geração é aceita apenas se
+$$
+	\card\{i_1^h,\ldots,i_{N_I}^h\}=N_I.
+$$
+Caso contrário, uma nova tentativa de offspring é iniciada.
+
+\subsection{Outputs do filho}
+
+Analogamente,
+$$
+	\rho_O\sim\UnifInt(\lfloor0.4N_O\rfloor,\lfloor0.6N_O\rfloor),
+$$
+e
+$$
+	G_O^h[r]=
+	\begin{cases}
+		G_O^{P_1}[r], & r<\rho_O,\\
+		G_O^{P_2}[r], & r\geq\rho_O.
+	\end{cases}
+$$
+Os neurônios de output do filho são
+$$
+	o_r^h=\Phi_{a_h,b_h,c_h}^{(D)}(G_O^h[r]).
+$$
+A geração é aceita apenas se
+$$
+	\card\{o_1^h,\ldots,o_{N_O}^h\}=N_O
+$$
+e
+$$
+	\{o_1^h,\ldots,o_{N_O}^h\}\cap\{i_1^h,\ldots,i_{N_I}^h\}=\varnothing.
+$$
+
+\subsection{Thresholds de output do filho}
+
+Escolhe-se
+$$
+	\rho_{O,\theta}\sim\UnifInt(\lfloor0.4N_O\rfloor,\lfloor0.6N_O\rfloor).
+$$
+Então
+$$
+	G_{O,\theta}^h[r]=
+	\begin{cases}
+		G_{O,\theta}^{P_1}[r], & r<\rho_{O,\theta},\\
+		G_{O,\theta}^{P_2}[r], & r\geq\rho_{O,\theta}.
+	\end{cases}
+$$
+O threshold fenotípico é novamente
+$$
+	\Theta_{o_r^h}^{out,h}=\mu(G_{O,\theta}^h[r]).
+$$
+
+\subsection{Regiões locais do filho}
+
+As regiões são recombinadas sobre $M_h$ posições. Escolhe-se
+$$
+	\rho_R\sim\UnifInt(\lfloor0.4M_h\rfloor,\lfloor0.6M_h\rfloor).
+$$
+Para cada índice $u\in\{0,\ldots,M_h-1\}$,
+$$
+	G_R^h[u]=
+	\begin{cases}
+		G_R^{P_1}[u], & u<\rho_R\text{ e }u<M_1,\\
+		G_R^{P_2}[u], & u<\rho_R\text{ e }u\geq M_1\text{ e }u<M_2,\\
+		\text{gene aleatório}, & u<\rho_R\text{ e não há gene parental disponível},\\
+		G_R^{P_2}[u], & u\geq\rho_R\text{ e }u<M_2,\\
+		G_R^{P_1}[u], & u\geq\rho_R\text{ e }u\geq M_2\text{ e }u<M_1,\\
+		\text{gene aleatório}, & u\geq\rho_R\text{ e não há gene parental disponível}.
+	\end{cases}
+$$
+Isto é: antes do corte há preferência pelo pai $P_1$; depois do corte há preferência pelo pai $P_2$; quando o filho possui neurônios além do alcance genético dos pais, o gene é preenchido aleatoriamente.
+
+\subsection{Número inicial de conexões do filho}
+
+O gene $G_Q^h$ é escolhido integralmente de um dos pais:
+$$
+	G_Q^h=
+	\begin{cases}
+		G_Q^{P_1}, & U>0.5,\\
+		G_Q^{P_2}, & U\leq0.5,
+	\end{cases}
+	\qquad U\sim\operatorname{Uniforme}(0,1).
+$$
+Então
+$$
+	Q_h=D_{D_4}(G_Q^h)\bmod(M_h-1).
+$$
+
+\subsection{Conexões iniciais do filho}
+
+Para cada neurônio $u$ do filho, escolhe-se
+$$
+	\rho_E\sim\UnifInt(\lfloor0.4Q_h\rfloor,\lfloor0.6Q_h\rfloor).
+$$
+Para cada candidato $w\in\{1,\ldots,Q_h\}$, usa-se a regra de preferência:
+$$
+	G_E^h[u,w]=
+	\begin{cases}
+		G_E^{P_1}[u,w], & w<\rho_E\text{ e disponível},\\
+		G_E^{P_2}[u,w], & w<\rho_E\text{ e }P_1\text{ indisponível, mas }P_2\text{ disponível},\\
+		\text{gene aleatório}, & w<\rho_E\text{ e indisponível nos dois pais},\\
+		G_E^{P_2}[u,w], & w\geq\rho_E\text{ e disponível},\\
+		G_E^{P_1}[u,w], & w\geq\rho_E\text{ e }P_2\text{ indisponível, mas }P_1\text{ disponível},\\
+		\text{gene aleatório}, & w\geq\rho_E\text{ e indisponível nos dois pais}.
+	\end{cases}
+$$
+Cada palavra candidata é reinterpretada nas dimensões do filho, e a conexão correspondente é aceita se não for duplicada, se a conexão reversa não existir e se o destino estiver dentro da região local do neurônio de origem.
+
+\subsection{Probabilidades de plasticidade do filho}
+
+Escolhe-se
+$$
+	\rho_P\sim\UnifInt(\lfloor0.4M_h\rfloor,\lfloor0.6M_h\rfloor).
+$$
+Para cada neurônio $u$,
+$$
+	G_P^h[u]=
+	\begin{cases}
+		G_P^{P_1}[u], & u<\rho_P\text{ e disponível},\\
+		G_P^{P_2}[u], & u<\rho_P\text{ e }P_1\text{ indisponível, mas }P_2\text{ disponível},\\
+		\text{gene aleatório}, & u<\rho_P\text{ e indisponível nos dois pais},\\
+		G_P^{P_2}[u], & u\geq\rho_P\text{ e disponível},\\
+		G_P^{P_1}[u], & u\geq\rho_P\text{ e }P_2\text{ indisponível, mas }P_1\text{ disponível},\\
+		\text{gene aleatório}, & u\geq\rho_P\text{ e indisponível nos dois pais}.
+	\end{cases}
+$$
+O fenótipo é
+$$
+	p_u^h=\mu(G_P^h[u]).
+$$
+
+\subsection{Thresholds internos do filho}
+
+A recombinação dos thresholds internos segue a mesma regra das probabilidades:
+$$
+	\rho_\theta\sim\UnifInt(\lfloor0.4M_h\rfloor,\lfloor0.6M_h\rfloor),
+$$
+com preferência por $P_1$ antes do corte e por $P_2$ depois do corte. O threshold final é
+$$
+	\theta_u^h=\mu(G_\theta^h[u]).
+$$
+
+\subsection{Parâmetros globais herdados ou gerados}
+
+O decay é herdado integralmente de um dos pais:
+$$
+	G_\delta^h=
+	\begin{cases}
+		G_\delta^{P_1}, & U>0.5,\\
+		G_\delta^{P_2}, & U\leq0.5.
+	\end{cases}
+$$
+A inatividade pós-disparo é gerada novamente de forma aleatória:
+$$
+	G_\tau^h\sim\operatorname{Uniforme}(\SigmaGen^{D_2}),
+\qquad
+	\tau_h=D_{D_2}(G_\tau^h)+1.
+$$
+O fator exponencial é herdado integralmente de um dos pais:
+$$
+	G_\kappa^h=
+	\begin{cases}
+		G_\kappa^{P_1}, & U>0.5,\\
+		G_\kappa^{P_2}, & U\leq0.5.
+	\end{cases}
+$$
+O gene reservado $G_\omega$ também é herdado integralmente de um dos pais:
+$$
+	G_\omega^h=
+	\begin{cases}
+		G_\omega^{P_1}, & U>0.5,\\
+		G_\omega^{P_2}, & U\leq0.5.
+	\end{cases}
+$$
+
+\subsection{Algoritmo de offspring}
+
+\algoritmo{Geração de descendente}
+
+\begin{enumerate}
+	\item Receber identificadores dos pais $P_1$ e $P_2$.
+	\item Se algum pai não existir no backend, retornar falha.
+	\item Repetir por no máximo duas tentativas:
+	\begin{enumerate}
+		\item amostrar dimensões do filho entre as dimensões dos pais;
+		\item recombinar genes de input por corte entre $40\%$ e $60\%$;
+		\item reinterpretar inputs nas dimensões do filho;
+		\item se houver colisão entre inputs, reiniciar tentativa;
+		\item recombinar genes de output por corte entre $40\%$ e $60\%$;
+		\item reinterpretar outputs nas dimensões do filho;
+		\item se houver colisão entre outputs ou interseção input--output, reiniciar tentativa;
+		\item recombinar thresholds de output;
+		\item recombinar regiões locais, usando genes aleatórios quando o filho possui neurônios sem correspondente parental;
+		\item herdar de um dos pais o gene do número inicial de conexões;
+		\item recombinar os genes de conexões iniciais para cada neurônio;
+		\item recombinar probabilidades de plasticidade;
+		\item recombinar thresholds internos;
+		\item herdar decay, fator exponencial e gene reservado de enfraquecimento;
+		\item gerar aleatoriamente o período de inatividade;
+		\item inicializar sinais, forças sinápticas, contadores e número de filhos.
+	\end{enumerate}
+	\item Se alguma tentativa for aceita, retornar o filho.
+	\item Se todas as tentativas falharem, retornar falha.
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=1.0cm and 1.0cm]
+	\node[flowblock] (s1) {Receber pais $P_1,P_2$};
+	\node[flowdecision, right=1.5cm of s1] (s2) {Pais existem\\no backend?};
+	\node[flowblock, right=1.5cm of s2] (s3) {Amostrar dimensões\\do filho};
+	\node[flowblock, below=1.3cm of s3] (s4) {Recombinar inputs\\e reinterpretar};
+	\node[flowdecision, left=2.0cm of s4] (s5) {Inputs válidos?};
+	\node[flowblock, below=1.3cm of s4] (s6) {Recombinar outputs\\e reinterpretar};
+	\node[flowdecision, right=2.0cm of s6] (s7) {Outputs válidos\\e disjuntos?};
+	\node[flowblock, below=1.3cm of s6] (s8) {Recombinar demais genes};
+	\node[flowblock, below=1.3cm of s8] (s9) {Inicializar estado\\do filho};
+	\node[flowblock, below=1.3cm of s9] (s10) {Retornar filho};
+	\node[flowblock, below=1.3cm of s5] (s11) {Nova tentativa\\(máx. 2)};
+	\node[flowblock, below=1.3cm of s2] (s12) {Retornar falha};
+
+	\draw[flowline] (s1) -- (s2);
+	\draw[flowline] (s2) -- node[above]{sim} (s3);
+	\draw[flowline] (s2) -- node[right]{não} (s12);
+	\draw[flowline] (s3) -- (s4);
+	\draw[flowline] (s4) -- (s5);
+	\draw[flowline] (s5) -- node[left]{sim} (s6);
+	\draw[flowline] (s5) -- node[left]{não} (s11);
+	\draw[flowline] (s6) -- (s7);
+	\draw[flowline] (s7) -- node[right]{sim} (s8);
+	\draw[flowline] (s7.east) -- ++(1.5,0) node[above]{não} |- (s11.east);
+	\draw[flowline] (s8) -- (s9);
+	\draw[flowline] (s9) -- (s10);
+	\draw[flowline] (s11) |- (s3.west);
+\end{tikzpicture}}
+\caption{Fluxograma do Algoritmo 3. O offspring é uma recombinação com validação estrutural; quando inputs ou outputs do filho se tornam inválidos, uma nova tentativa é executada.}
+\label{fig:fluxo-offspring}
+\end{figure}
+
+\section{Ecologia, energia e pressão seletiva}
+
+O ambiente atua como mecanismo de seleção. Cada organismo possui uma energia $E_b(t)$, inicializada em $1.0$. A execução de ações consome energia:
+
+\begin{table}[H]
+\centering
+\caption{Custos energéticos das ações implementadas.}
+\label{tab:energia}
+\begin{tabular}{lll}
+\toprule
+Ação & Condição & Custo \\
+\midrule
+movimento para frente & $Y^1=1$ & $0.002$ \\
+movimento para trás & $Y^2=1$ e $Y^1\neq1$ & $0.002$ \\
+rotação positiva & $Y^3=1$ & $0.0015$ \\
+rotação negativa & $Y^4=1$ e $Y^3\neq1$ & $0.0015$ \\
+decaimento basal & todo passo processado & $0.001$ \\
+reprodução & evento de offspring & $0.01$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Quando o organismo come, sua energia aumenta:
+$$
+	E_b(t+1)=\min\{2.0,E_b(t)+0.5\}.
+$$
+Quando sua energia fica negativa, o organismo é removido da cena. Assim, a sobrevivência depende de produzir ações que levem o blob a encontrar comida antes que a energia seja consumida.
+
+A reprodução exige colisão entre dois blobs e as seguintes condições: idade mínima superior a $100$ passos de vida, cooldown de reprodução, limite máximo de filhos por blob e população total inferior ao máximo permitido. O nascimento do filho ocorre com energia inicial $0.5$.
+
+Não há fitness explícita. A aptidão é implícita e ecológica:
+$$
+	\text{aptidão efetiva} \approx \text{sobreviver} + \text{encontrar comida} + \text{reproduzir}.
+$$
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.3cm]
+	\node[flowblock] (nasc) {Nascimento\\$E=1.0$};
+	\node[flowblock, right=1.7cm of nasc] (agir) {Agir\\movimento/rotação};
+	\node[flowblock, right=1.7cm of agir] (comer) {Encontrar comida\\$E\uparrow$};
+	\node[flowblock, below=1.4cm of agir] (gastar) {Gastar energia\\e envelhecer};
+	\node[flowdecision, left=1.7cm of gastar] (morre) {$E<0$?};
+	\node[flowdecision, right=1.7cm of gastar] (repro) {Pode\\reproduzir?};
+	\node[flowblock, below=1.4cm of morre] (fim) {Morte};
+	\node[flowblock, below=1.4cm of repro] (filho) {Offspring};
+	\draw[flowline] (nasc) -- (agir);
+	\draw[flowline] (agir) -- (comer);
+	\draw[flowline] (agir) -- (gastar);
+	\draw[flowline] (comer) |- (gastar);
+	\draw[flowline] (gastar) -- (morre);
+	\draw[flowline] (gastar) -- (repro);
+	\draw[flowline] (morre) -- node[left]{sim} (fim);
+	\draw[flowline] (morre.north) -- ++(0,0.9) node[right]{não} -| (agir.south);
+	\draw[flowline] (repro) -- node[right]{sim} (filho);
+	\draw[flowline] (repro.north) -- ++(0,0.9) node[left]{não} -| (agir.south);
+	\draw[flowline] (filho.west) |- (agir.south);
+\end{tikzpicture}
+\caption{Ciclo ecológico simplificado do blob: agir, gastar energia, encontrar comida e eventualmente reproduzir ou morrer.}
+\label{fig:ciclo-ecologico}
+\end{figure}
+
+\section{Metodologia da implementação}
+
+\subsection{Arquitetura geral}
+
+A implementação é dividida em duas partes:
+
+\begin{enumerate}
+	\item \textbf{Frontend em Godot:} responsável por ambiente bidimensional, física, visualização, colisões, comida, energia, coleta de inputs e aplicação de outputs.
+	\item \textbf{Backend em Python:} responsável por geração dos cérebros, armazenamento dos genomas, processamento neuronal, plasticidade, offspring e comunicação via WebSocket.
+\end{enumerate}
+
+A comunicação ocorre por WebSocket local no endereço
+\begin{center}
+\texttt{ws://127.0.0.1:8000/ws}
+\end{center}
+O backend usa FastAPI e Uvicorn. O frontend usa \texttt{WebSocketPeer} do Godot.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.6cm]
+	\node[flowblock] (godot) {Godot\\ambiente + física + HUD};
+	\node[flowblock, right=2.1cm of godot] (ws1) {Enviar batch\\JSON via WebSocket};
+	\node[flowblock, right=2.1cm of ws1] (python) {Python\\cérebros + genética + processamento};
+	\node[flowblock, below=1.5cm of ws1] (ws2) {Receber resultados\\JSON via WebSocket};
+	\draw[flowline] (godot) -- node[above]{inputs dos blobs} (ws1);
+	\draw[flowline] (ws1) -- (python);
+	\draw[flowline] (python) -- node[right]{outputs / offspring} (ws2);
+	\draw[flowline] (ws2) -- (godot);
+\end{tikzpicture}
+\caption{Arquitetura lógico-operacional da implementação. O Godot controla o ambiente e o Python controla a lógica cerebral; ambos se comunicam por lotes via WebSocket.}
+\label{fig:arquitetura}
+\end{figure}
+
+\subsection{Protocolo de comunicação}
+
+A comunicação é feita por lotes. O frontend envia uma mensagem JSON da forma
+\begin{center}
+\texttt{\{"batch": [requisições]\}}
+\end{center}
+Cada requisição possui um campo \texttt{npc\_action}. As ações principais são:
+
+\begin{table}[H]
+\centering
+\caption{Ações suportadas pelo backend.}
+\label{tab:websocket}
+\begin{tabular}{ll}
+\toprule
+Ação & Função \\
+\midrule
+\texttt{gen\_brain} & gerar novo cérebro para um blob \\
+\texttt{process} & processar inputs e retornar outputs \\
+\texttt{offspring} & gerar descendente a partir de dois pais \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A resposta do backend tem a forma
+\begin{center}
+\texttt{\{"results": [resultados]\}}
+\end{center}
+Para processamento, cada resultado inclui identificador do blob, vetor de outputs, número corrente de conexões e tamanho máximo possível do cérebro.
+
+\subsection{Inputs implementados}
+
+O vetor de inputs do blob possui $16$ componentes:
+$$
+	X=(X_1,\ldots,X_{16}).
+$$
+Na implementação atual:
+$$
+\begin{aligned}
+X_1 &= \max(0,v_x),&
+X_2 &= \max(0,-v_x),\\
+X_3 &= \max(0,v_y),&
+X_4 &= \max(0,-v_y),\\
+X_5 &= \max(0,\omega),&
+X_6 &= \max(0,-\omega),\\
+X_7 &= |\rho/(2\pi)|,&
+X_8 &= E_b,\\
+X_9 &= \frac{1}{1+E_b},&
+X_{10} &= \text{contador de proximidade de comida},\\
+X_{11} &= \text{indicador de colisão},&
+X_{12} &= \min(10,100/d),\\
+X_{13} &= Y_{t-1}^1,&
+X_{14} &= Y_{t-1}^2,\\
+X_{15} &= Y_{t-1}^3,&
+X_{16} &= Y_{t-1}^4.
+\end{aligned}
+$$
+Aqui $v_x,v_y$ são componentes da velocidade linear, $\omega$ é a velocidade angular, $\rho$ é a rotação atual do blob, $E_b$ é a energia e $d$ é a distância até uma comida detectada.
+
+Os quatro outputs anteriores são realimentados como inputs, produzindo uma memória comportamental de curto prazo no acoplamento organismo--ambiente.
+
+\begin{table}[H]
+\centering
+\caption{Resumo didático dos $16$ inputs.}
+\label{tab:inputs-resumo}
+\begin{tabular}{cl}
+\toprule
+Input & Descrição \\
+\midrule
+$X_1,X_2$ & velocidade horizontal positiva e negativa \\
+$X_3,X_4$ & velocidade vertical positiva e negativa \\
+$X_5,X_6$ & velocidade angular positiva e negativa \\
+$X_7$ & rotação normalizada \\
+$X_8,X_9$ & energia e inverso regularizado da energia \\
+$X_{10},X_{12}$ & proximidade e distância inversa até comida \\
+$X_{11}$ & colisão \\
+$X_{13},\ldots,X_{16}$ & outputs do passo anterior \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Outputs implementados}
+
+Os outputs binários controlam corpo e energia:
+
+\begin{enumerate}
+	\item $Y^1=1$: define velocidade linear para frente na direção da rotação.
+	\item $Y^2=1$: define velocidade linear para trás em relação à rotação.
+	\item $Y^3=1$: define rotação angular positiva.
+	\item $Y^4=1$: define rotação angular negativa.
+\end{enumerate}
+
+O corpo físico do blob é um \texttt{RigidBody2D} sem gravidade, com amortecimento linear e angular. A cena contém paredes estáticas que delimitam o ambiente.
+
+\subsection{Comida e sensores ambientais}
+
+Cada comida possui duas áreas de detecção:
+
+\begin{enumerate}
+	\item uma área maior, que indica proximidade e fornece distância;
+	\item uma área menor, que representa consumo da comida.
+\end{enumerate}
+
+Ao entrar na área maior, o blob recebe sinal de proximidade e distância inversa. Ao entrar na área menor, a comida é removida da cena e a energia do blob aumenta. Novas comidas são adicionadas periodicamente ao ambiente.
+
+\subsection{Economia computacional}
+
+Processar todos os cérebros em todos os frames pode se tornar custoso. Por isso, o backend usa uma estratégia de economia: o blob de identificador \texttt{blob\_0} é sempre processado, mas os demais são processados em subconjuntos definidos pelo resto do identificador numérico módulo $5$. Assim, cada requisição processa apenas parte da população, reduzindo o custo por frame.
+
+O \texttt{blob\_0} também é usado como organismo de referência para registro de atividade neuronal. No frontend, sua energia é mantida em $1.0$ para impedir que ele morra antes do encerramento da simulação.
+
+\subsection{Históricos e visualização}
+
+O backend mantém em memória dois históricos:
+
+\begin{enumerate}
+	\item histórico de sinais neuronais;
+	\item histórico do número de conexões por blob.
+\end{enumerate}
+
+O script de visualização posterior usa Plotly para gerar uma animação tridimensional da atividade neuronal e uma série temporal do número de conexões. Esses instrumentos são importantes para avaliar a evolução estrutural e dinâmica dos cérebros, ainda que a versão atual do protótipo deva garantir consistência entre o formato do histórico salvo e o formato esperado pela visualização.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.4cm]
+	\node[flowsmall] (f1) {Cena Godot inicializada};
+	\node[flowsmall, right=1.4cm of f1] (f2) {Gerar blobs no backend};
+	\node[flowsmall, right=1.4cm of f2] (f3) {Instanciar blobs na cena};
+	\node[flowsmall, below=1.2cm of f3] (f4) {Coletar inputs};
+	\node[flowsmall, left=1.4cm of f4] (f5) {Enviar batch};
+	\node[flowsmall, left=1.4cm of f5] (f6) {Processar cérebros};
+	\node[flowsmall, below=1.2cm of f6] (f7) {Retornar outputs};
+	\node[flowsmall, right=1.4cm of f7] (f8) {Aplicar ações e atualizar energia};
+	\node[flowsmall, right=1.4cm of f8] (f9) {Colisão/offspring e novos ciclos};
+	\draw[flowline] (f1) -- (f2);
+	\draw[flowline] (f2) -- (f3);
+	\draw[flowline] (f3) -- (f4);
+	\draw[flowline] (f4) -- (f5);
+	\draw[flowline] (f5) -- (f6);
+	\draw[flowline] (f6) -- (f7);
+	\draw[flowline] (f7) -- (f8);
+	\draw[flowline] (f8) -- (f9);
+	\draw[flowline] (f9.north) |- (f4.east);
+\end{tikzpicture}
+\caption{Ciclo operacional resumido da implementação. O sistema alterna entre percepção, processamento cerebral, atuação e atualização ambiental.}
+\label{fig:ciclo-operacional}
+\end{figure}
+
+\section{Discussão}
+
+O modelo proposto separa claramente três níveis de adaptação:
+
+\begin{enumerate}
+	\item \textbf{Adaptação genética:} estruturas cerebrais são geradas e recombinadas por genes discretos.
+	\item \textbf{Adaptação individual:} conexões internas podem ser criadas e enfraquecidas durante a vida do organismo.
+	\item \textbf{Adaptação ecológica:} o ambiente seleciona organismos por sobrevivência, alimentação e reprodução.
+\end{enumerate}
+
+A ausência de camadas e de função de perda explícita torna o modelo menos controlável, mas também mais aberto. Comportamentos úteis não são impostos por engenharia direta; devem emergir de combinações entre topologia, sinais, plasticidade e pressão seletiva. Essa abertura é precisamente o ponto de interesse do protótipo.
+
+Há, entretanto, limitações importantes. A simulação ainda não possui métricas consolidadas de desempenho populacional, mecanismos explícitos de mutação pontual em offspring, análise estatística de linhagens ou comparação com baselines. Além disso, alguns genes já existem na estrutura, como o período enfraquecido, mas ainda não são usados na dinâmica. Tais elementos devem ser tratados como extensões naturais do modelo.
+
+\begin{table}[H]
+\centering
+\caption{Síntese das hipóteses e implicações do protótipo.}
+\label{tab:hipoteses}
+\begin{tabular}{p{5.1cm}p{8.9cm}}
+\toprule
+Hipótese de modelagem & Implicação experimental \\
+\midrule
+Topologia não baseada em camadas & permite recorrência e geometria local emergentes \\
+Genoma discreto com mapeamento indireto & favorece diversidade estrutural e rejeição de cérebros inválidos \\
+Plasticidade durante a vida & separa adaptação ontogenética de adaptação evolutiva \\
+Seleção sem fitness explícita & desloca o problema para a ecologia do ambiente \\
+Processamento distribuído em backend & viabiliza cérebros mais caros do que a execução integral no engine gráfico \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Conclusão}
+
+Este artigo formalizou um protótipo de simulação artificial de evolução neuronal. Cada organismo possui um cérebro definido por uma malha tridimensional de neurônios, conexões direcionais, thresholds, regiões locais de conectividade, resposta exponencial, plasticidade estrutural e enfraquecimento seletivo de conexões internas. A geração inicial dos cérebros é genética, a reprodução ocorre por recombinação de genes parentais e a seleção é determinada pelo ambiente.
+
+O modelo não pretende substituir redes neurais artificiais tradicionais, mas explorar um regime alternativo de inteligência artificial baseada em organismos, ecologia, plasticidade e evolução. O próximo passo natural é instrumentar melhor os históricos, introduzir métricas de linhagem, testar diferentes regras de mutação e avaliar se estruturas neuronais mais adaptadas emergem de forma robusta sob diferentes configurações ambientais.
+
 \end{document}
