@@ -1,0 +1,15 @@
+[gd_scene load_steps=5 format=3 uid="uid://c5b81yv3srabj"]
+
+[ext_resource type="PackedScene" uid="uid://bxla548unf55d" path="res://scenes/environment.tscn" id="1_0wfyh"]
+[ext_resource type="Script" uid="uid://b62s5esa0mdy0" path="res://scripts/main.gd" id="1_sugp2"]
+[ext_resource type="PackedScene" uid="uid://bayxx2p2d7nlr" path="res://scenes/node.tscn" id="3_sugp2"]
+[ext_resource type="PackedScene" uid="uid://b7iutqask6ax2" path="res://scenes/hud.tscn" id="4_jyhfs"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_sugp2")
+
+[node name="Environment" parent="." instance=ExtResource("1_0wfyh")]
+
+[node name="Node" parent="." instance=ExtResource("3_sugp2")]
+
+[node name="HUD" parent="." instance=ExtResource("4_jyhfs")]
