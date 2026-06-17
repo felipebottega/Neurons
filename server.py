@@ -377,56 +377,120 @@ def gen_brain():
 def offspring(npc_id1, npc_id2):
     success = False
     trial = 0
-        
-    
+
+    # Mutação pontual baixa. Como o gene de connections pode ser muito grande,
+    # ele usa uma taxa menor.
+    MUTATION_RATE = 0.002
+    CONNECTION_MUTATION_RATE = 0.0002
+
+    # Probabilidade de preservar exatamente as dimensões de um dos pais.
+    # A parte restante mantém a regra anterior de sortear dimensões intermediárias.
+    DIM_PARENT_1_PROB = 0.45
+    DIM_PARENT_2_PROB = 0.45
+
+    def mutate_array(arr, mutation_rate=MUTATION_RATE):
+        arr = np.array(arr, copy=True)
+
+        if mutation_rate <= 0:
+            return arr
+
+        mask = np.random.rand(*arr.shape) < mutation_rate
+
+        if np.any(mask):
+            arr[mask] = np.random.randint(NUM_SYMBOLS, size=int(mask.sum()))
+
+        return arr
+
     while not success:
         trial += 1
-        
+
         if trial == 3 or npc_id1 not in NPC or npc_id2 not in NPC:
             return '', ''
-        
+
         gens = {}
         gens_num = {}
 
         ######################################################################################################
         # Dimensions.
-        a = np.random.randint(min(NPC[npc_id1]['dims'][0], NPC[npc_id2]['dims'][0]), 1 + max(NPC[npc_id1]['dims'][0], NPC[npc_id2]['dims'][0]))
-        b = np.random.randint(min(NPC[npc_id1]['dims'][1], NPC[npc_id2]['dims'][1]), 1 + max(NPC[npc_id1]['dims'][1], NPC[npc_id2]['dims'][1]))
-        c = np.random.randint(min(NPC[npc_id1]['dims'][2], NPC[npc_id2]['dims'][2]), 1 + max(NPC[npc_id1]['dims'][2], NPC[npc_id2]['dims'][2]))
+        # Regra mais conservadora:
+        # - normalmente herda exatamente as dimensões de um dos pais;
+        # - às vezes sorteia dimensões intermediárias, como antes.
+        u = np.random.rand()
+
+        if u < DIM_PARENT_1_PROB:
+            a, b, c = NPC[npc_id1]['dims']
+        elif u < DIM_PARENT_1_PROB + DIM_PARENT_2_PROB:
+            a, b, c = NPC[npc_id2]['dims']
+        else:
+            a = np.random.randint(min(NPC[npc_id1]['dims'][0], NPC[npc_id2]['dims'][0]), 1 + max(NPC[npc_id1]['dims'][0], NPC[npc_id2]['dims'][0]))
+            b = np.random.randint(min(NPC[npc_id1]['dims'][1], NPC[npc_id2]['dims'][1]), 1 + max(NPC[npc_id1]['dims'][1], NPC[npc_id2]['dims'][1]))
+            c = np.random.randint(min(NPC[npc_id1]['dims'][2], NPC[npc_id2]['dims'][2]), 1 + max(NPC[npc_id1]['dims'][2], NPC[npc_id2]['dims'][2]))
+
         gens['dims'] = [a, b, c]
         gens_num['dims'] = [a, b, c]
         num_neurons = a * b * c
-        
+
         if SHOW:
             print(f'Child: Dimensions = {a} x {b} x {c}    Number of neurons = {num_neurons}')
+
+        ######################################################################################################
+        # Máscara espacial 3D para herança local.
+        # A ideia é preservar pacotes coerentes de neurônios:
+        # regions[idx], connections[idx], probs[idx] e thr[idx] tendem a vir do mesmo pai.
+        axis = np.random.randint(3)
+        axis_size = [a, b, c][axis]
+        axis_cut = np.random.randint(1, axis_size) if axis_size > 1 else 0
+        invert_axis = np.random.rand() > 0.5
+
+        def use_parent1_local(idx):
+            x = idx % a
+            y = (idx // a) % b
+            z = idx // (a * b)
+            coord = [x, y, z][axis]
+
+            if axis_size <= 1:
+                return np.random.rand() > 0.5
+
+            if invert_axis:
+                return coord >= axis_cut
+            else:
+                return coord < axis_cut
+
+        def parent_order_for_neuron(idx):
+            if use_parent1_local(idx):
+                return npc_id1, npc_id2
+            else:
+                return npc_id2, npc_id1
 
         ######################################################################################################
         # Connections with inputs.
         cut = np.random.randint(int(0.4 * NUM_INPUTS), int(0.6 * NUM_INPUTS)+1)
         gens['inputs'] = np.zeros([NUM_INPUTS, 3 * NUM_DIGITS], dtype=np.int64)
-        
+
         for i in range(cut):
             gens['inputs'][i, :] = NPC[npc_id1]['gens']['inputs'][i, :]
-            
+
         for i in range(cut, NUM_INPUTS):
             gens['inputs'][i, :] = NPC[npc_id2]['gens']['inputs'][i, :]
-                    
+
+        gens['inputs'] = mutate_array(gens['inputs'])
+
         gens_num['inputs'] = []
 
         for n in range(NUM_INPUTS):
             i = digits2int(gens['inputs'][n, : NUM_DIGITS]) % a
             j = digits2int(gens['inputs'][n, NUM_DIGITS : 2*NUM_DIGITS]) % b
-            k = digits2int(gens['inputs'][n, 2*NUM_DIGITS : 3*NUM_DIGITS]) % c   
+            k = digits2int(gens['inputs'][n, 2*NUM_DIGITS : 3*NUM_DIGITS]) % c
             gens_num['inputs'].append(i + j*a + k*a*b)
 
         gens_num['inputs'] = list(set(gens_num['inputs']))
         num_connections_input_neuron = len(gens_num['inputs'])
-        
+
         if num_connections_input_neuron != NUM_INPUTS:
             if SHOW:
                 print('Child: É necessário repetir a operação pois existem inputs não conectados a neurônios.')
             continue
-        
+
         if SHOW:
             print(f"Child: Neurons connected to inputs: {gens_num['inputs']}    Number of connections: {num_connections_input_neuron}")
 
@@ -434,13 +498,15 @@ def offspring(npc_id1, npc_id2):
         # Connections with outputs.
         cut = np.random.randint(int(0.4 * NUM_OUTPUTS), int(0.6 * NUM_OUTPUTS)+1)
         gens['outputs'] = np.zeros([NUM_OUTPUTS, 3 * NUM_DIGITS], dtype=np.int64)
-        
+
         for i in range(cut):
             gens['outputs'][i, :] = NPC[npc_id1]['gens']['outputs'][i, :]
-            
+
         for i in range(cut, NUM_OUTPUTS):
             gens['outputs'][i, :] = NPC[npc_id2]['gens']['outputs'][i, :]
-            
+
+        gens['outputs'] = mutate_array(gens['outputs'])
+
         gens_num['outputs'] = []
 
         for n in range(NUM_OUTPUTS):
@@ -451,11 +517,13 @@ def offspring(npc_id1, npc_id2):
 
         gens_num['outputs'] = list(set(gens_num['outputs']))
         num_connections_output_neuron = len(gens_num['outputs'])
-        
+
         if num_connections_output_neuron != NUM_OUTPUTS:
             if SHOW:
                 print('Child: É necessário repetir a operação pois existem outputs não conectados a neurônios.')
             continue
+
+        success = True
 
         for x in gens_num['outputs']:
             if x in gens_num['inputs']:
@@ -463,25 +531,26 @@ def offspring(npc_id1, npc_id2):
                     print(f'Child: É necessário repetir a operação pois um neurônio conectado ao output já está sendo usado por um de input: {x}')
                 success = False
                 break
-            success = True
-            
+
         if not success:
-            continue                
+            continue
 
         if SHOW:
             print(f"Child: Neurons connected to outputs: {gens_num['outputs']}    Number of connections: {num_connections_output_neuron}")
-            
+
         ######################################################################################################
         # Output thresholds to make action.
         cut = np.random.randint(int(0.4 * len(gens['outputs'])), int(0.6 * len(gens['outputs']))+1)
         gens['outputs_thr'] = np.zeros([len(gens['outputs'])], dtype=np.int64)
-        
+
         for i in range(cut):
             gens['outputs_thr'][i] = NPC[npc_id1]['gens']['outputs_thr'][i]
-            
+
         for i in range(cut, len(gens['outputs'])):
             gens['outputs_thr'][i] = NPC[npc_id2]['gens']['outputs_thr'][i]
-        
+
+        gens['outputs_thr'] = mutate_array(gens['outputs_thr'])
+
         gens_num['outputs_thr'] = {}
         w = 0
 
@@ -494,25 +563,21 @@ def offspring(npc_id1, npc_id2):
 
         ######################################################################################################
         # Region sizes.
-        cut = np.random.randint(int(0.4 * num_neurons), int(0.6 * num_neurons)+1)
+        # Agora regions são herdadas por pacote local espacial, não por corte independente.
         gens['regions'] = np.zeros([num_neurons, 3 * NUM_DIGITS_2], dtype=np.int64)
-        
-        for i in range(cut):
-            if i < NPC[npc_id1]['gens']['regions'].shape[0]:
-                gens['regions'][i, :] = NPC[npc_id1]['gens']['regions'][i, :]
-            elif i < NPC[npc_id2]['gens']['regions'].shape[0]:
-                gens['regions'][i, :] = NPC[npc_id2]['gens']['regions'][i, :]
-            else:    # fallback - filho tem mais neurônios que os pais
-                gens['regions'][i, :] = np.random.randint(NUM_SYMBOLS, size=[3 * NUM_DIGITS_2])
-            
-        for i in range(cut, num_neurons):
-           if i < NPC[npc_id2]['gens']['regions'].shape[0]:
-               gens['regions'][i, :] = NPC[npc_id2]['gens']['regions'][i, :]
-           elif i < NPC[npc_id1]['gens']['regions'].shape[0]:
-                gens['regions'][i, :] = NPC[npc_id1]['gens']['regions'][i, :]
-           else:    # fallback - filho tem mais neurônios que os pais
-                gens['regions'][i, :] = np.random.randint(NUM_SYMBOLS, size=[3 * NUM_DIGITS_2])
-        
+
+        for idx in range(num_neurons):
+            parent_first, parent_second = parent_order_for_neuron(idx)
+
+            if idx < NPC[parent_first]['gens']['regions'].shape[0]:
+                gens['regions'][idx, :] = NPC[parent_first]['gens']['regions'][idx, :]
+            elif idx < NPC[parent_second]['gens']['regions'].shape[0]:
+                gens['regions'][idx, :] = NPC[parent_second]['gens']['regions'][idx, :]
+            else:
+                gens['regions'][idx, :] = np.random.randint(NUM_SYMBOLS, size=[3 * NUM_DIGITS_2])
+
+        gens['regions'] = mutate_array(gens['regions'])
+
         gens_num['regions'] = {}
         w = 0
 
@@ -524,16 +589,16 @@ def offspring(npc_id1, npc_id2):
                     region_size_z = digits2int(gens['regions'][w, 2*NUM_DIGITS_2 : 3*NUM_DIGITS_2]) % c
                     gens_num['regions'][i + j*a + k*a*b] = [region_size_x, region_size_y, region_size_z]
                     w += 1
-            
+
         ######################################################################################################
         # Conexões pré-programadas no cérebro. Cada neurônio está conectado a um conjunto de neurônios diferentes no início.
-        gens['num_initial_connections'] = np.random.randint(NUM_SYMBOLS, size=[NUM_DIGITS_4])
-        
         if np.random.rand() > 0.5:
-            gens['num_initial_connections'] = NPC[npc_id1]['gens']['num_initial_connections']
+            gens['num_initial_connections'] = np.array(NPC[npc_id1]['gens']['num_initial_connections'], copy=True)
         else:
-            gens['num_initial_connections'] = NPC[npc_id2]['gens']['num_initial_connections']
-        
+            gens['num_initial_connections'] = np.array(NPC[npc_id2]['gens']['num_initial_connections'], copy=True)
+
+        gens['num_initial_connections'] = mutate_array(gens['num_initial_connections'])
+
         num_initial_connections = digits2int(gens['num_initial_connections']) % (num_neurons - 1)
         gens_num['num_initial_connections'] = num_initial_connections
         gens['connections'] = {}
@@ -543,33 +608,28 @@ def offspring(npc_id1, npc_id2):
             for j in range(b):
                 for k in range(c):
                     idx = i + j*a + k*a*b
-                    cut = np.random.randint(int(0.4 * num_initial_connections), int(0.6 * num_initial_connections)+1)
+                    parent_first, parent_second = parent_order_for_neuron(idx)
+
                     gens['connections'][idx] = np.zeros([num_initial_connections, 3 * NUM_DIGITS_2], dtype=np.int64)
-                    
-                    for u in range(cut):
-                        if idx in NPC[npc_id1]['gens']['connections'] and u < NPC[npc_id1]['gens']['connections'][idx].shape[0]:
-                            gens['connections'][idx][u, :] = NPC[npc_id1]['gens']['connections'][idx][u, :]
-                        elif idx in NPC[npc_id2]['gens']['connections'] and u < NPC[npc_id2]['gens']['connections'][idx].shape[0]:
-                            gens['connections'][idx][u, :] = NPC[npc_id2]['gens']['connections'][idx][u, :]
-                        else:    # fallback - filho tem mais neurônios que os pais
+
+                    for u in range(num_initial_connections):
+                        if idx in NPC[parent_first]['gens']['connections'] and u < NPC[parent_first]['gens']['connections'][idx].shape[0]:
+                            gens['connections'][idx][u, :] = NPC[parent_first]['gens']['connections'][idx][u, :]
+                        elif idx in NPC[parent_second]['gens']['connections'] and u < NPC[parent_second]['gens']['connections'][idx].shape[0]:
+                            gens['connections'][idx][u, :] = NPC[parent_second]['gens']['connections'][idx][u, :]
+                        else:
                             gens['connections'][idx][u, :] = np.random.randint(NUM_SYMBOLS, size=[3 * NUM_DIGITS_2])
-                                                
-                    for u in range(cut, num_initial_connections):
-                        if idx in NPC[npc_id2]['gens']['connections'] and u < NPC[npc_id2]['gens']['connections'][idx].shape[0]:
-                            gens['connections'][idx][u, :] = NPC[npc_id2]['gens']['connections'][idx][u, :]
-                        elif idx in NPC[npc_id1]['gens']['connections'] and u < NPC[npc_id1]['gens']['connections'][idx].shape[0]:
-                            gens['connections'][idx][u, :] = NPC[npc_id1]['gens']['connections'][idx][u, :]
-                        else:    # fallback - filho tem mais neurônios que os pais
-                            gens['connections'][idx][u, :] = np.random.randint(NUM_SYMBOLS, size=[3 * NUM_DIGITS_2])
-                                            
+
+                    gens['connections'][idx] = mutate_array(gens['connections'][idx], CONNECTION_MUTATION_RATE)
+
                     gens_num['connections'][idx] = []
-                    
+
                     for w in range(num_initial_connections):
                         neuron_x = digits2int(gens['connections'][idx][w, : NUM_DIGITS_2]) % a
                         neuron_y = digits2int(gens['connections'][idx][w, NUM_DIGITS_2 : 2*NUM_DIGITS_2]) % b
-                        neuron_z = digits2int(gens['connections'][idx][w, 2*NUM_DIGITS_2 : 3*NUM_DIGITS_2]) % c  
+                        neuron_z = digits2int(gens['connections'][idx][w, 2*NUM_DIGITS_2 : 3*NUM_DIGITS_2]) % c
                         neuron2 = neuron_x + neuron_y*a + neuron_z*a*b
-                        
+
                         # Verifica se não é conexão repetida.
                         if neuron2 not in gens_num['connections'][idx]:
                             # Verifica se já não há uma conexão na direção contrária.
@@ -586,25 +646,21 @@ def offspring(npc_id1, npc_id2):
 
         ######################################################################################################
         # Probabilities of making connections.
-        cut = np.random.randint(int(0.4 * num_neurons), int(0.6 * num_neurons)+1)
+        # Agora probs seguem o mesmo pacote local usado em regions/connections.
         gens['probs'] = np.zeros([num_neurons], dtype=np.int64)
-        
-        for i in range(cut):
-            if i < NPC[npc_id1]['gens']['probs'].shape[0]:
-                gens['probs'][i] = NPC[npc_id1]['gens']['probs'][i]
-            elif i < NPC[npc_id2]['gens']['probs'].shape[0]:
-                gens['probs'][i] = NPC[npc_id2]['gens']['probs'][i]
-            else:    # fallback - filho tem mais neurônios que os pais
-                gens['probs'][i] = np.random.randint(NUM_SYMBOLS)
-            
-        for i in range(cut, num_neurons):
-            if i < NPC[npc_id2]['gens']['probs'].shape[0]:
-                gens['probs'][i] = NPC[npc_id2]['gens']['probs'][i]
-            elif i < NPC[npc_id1]['gens']['probs'].shape[0]:
-                gens['probs'][i] = NPC[npc_id1]['gens']['probs'][i]
-            else:    # fallback - filho tem mais neurônios que os pais
-                gens['probs'][i] = np.random.randint(NUM_SYMBOLS)
-        
+
+        for idx in range(num_neurons):
+            parent_first, parent_second = parent_order_for_neuron(idx)
+
+            if idx < NPC[parent_first]['gens']['probs'].shape[0]:
+                gens['probs'][idx] = NPC[parent_first]['gens']['probs'][idx]
+            elif idx < NPC[parent_second]['gens']['probs'].shape[0]:
+                gens['probs'][idx] = NPC[parent_second]['gens']['probs'][idx]
+            else:
+                gens['probs'][idx] = np.random.randint(NUM_SYMBOLS)
+
+        gens['probs'] = mutate_array(gens['probs'])
+
         gens_num['probs'] = {}
         w = 0
 
@@ -616,25 +672,21 @@ def offspring(npc_id1, npc_id2):
 
         ######################################################################################################
         # Threshold per neuron.
-        cut = np.random.randint(int(0.4 * num_neurons), int(0.6 * num_neurons)+1)
+        # Agora thr também segue o mesmo pacote local.
         gens['thr'] = np.zeros([num_neurons], dtype=np.int64)
-        
-        for i in range(cut):
-            if i < NPC[npc_id1]['gens']['thr'].shape[0]:
-                gens['thr'][i] = NPC[npc_id1]['gens']['thr'][i]
-            elif i < NPC[npc_id2]['gens']['thr'].shape[0]:
-                gens['thr'][i] = NPC[npc_id2]['gens']['thr'][i]
-            else:    # fallback - filho tem mais neurônios que os pais
-                gens['thr'][i] = np.random.randint(NUM_SYMBOLS)
-            
-        for i in range(cut, num_neurons):
-            if i < NPC[npc_id2]['gens']['thr'].shape[0]:
-                gens['thr'][i] = NPC[npc_id2]['gens']['thr'][i]
-            elif i < NPC[npc_id1]['gens']['thr'].shape[0]:
-                gens['thr'][i] = NPC[npc_id1]['gens']['thr'][i]
-            else:    # fallback - filho tem mais neurônios que os pais
-                gens['thr'][i] = np.random.randint(NUM_SYMBOLS)
-        
+
+        for idx in range(num_neurons):
+            parent_first, parent_second = parent_order_for_neuron(idx)
+
+            if idx < NPC[parent_first]['gens']['thr'].shape[0]:
+                gens['thr'][idx] = NPC[parent_first]['gens']['thr'][idx]
+            elif idx < NPC[parent_second]['gens']['thr'].shape[0]:
+                gens['thr'][idx] = NPC[parent_second]['gens']['thr'][idx]
+            else:
+                gens['thr'][idx] = np.random.randint(NUM_SYMBOLS)
+
+        gens['thr'] = mutate_array(gens['thr'])
+
         gens_num['thr'] = {}
         w = 0
 
@@ -647,57 +699,69 @@ def offspring(npc_id1, npc_id2):
         ######################################################################################################
         # Decay of neuron connections.
         if np.random.rand() > 0.5:
-            gens['decay'] = NPC[npc_id1]['gens']['decay']
+            gens['decay'] = np.array(NPC[npc_id1]['gens']['decay'], copy=True)
         else:
-            gens['decay'] = NPC[npc_id2]['gens']['decay']
-        
+            gens['decay'] = np.array(NPC[npc_id2]['gens']['decay'], copy=True)
+
+        gens['decay'] = mutate_array(gens['decay'])
         gens_num['decay'] = float('0.' + ''.join([str(x) for x in gens['decay']]))
-        
+
         if SHOW:
             print(f"Child: Decay e = {gens_num['decay']}")
 
         # Number of iterations that the neuron is inactive after sending a signal.
-        gens['inactive_iter'] = np.random.randint(NUM_SYMBOLS, size=[NUM_DIGITS_2])
+        # Antes este gene era sempre aleatório. Agora ele é herdado com baixa chance de mutação,
+        # para preservar melhor filhos de bons pais.
+        if np.random.rand() > 0.5:
+            gens['inactive_iter'] = np.array(NPC[npc_id1]['gens']['inactive_iter'], copy=True)
+        else:
+            gens['inactive_iter'] = np.array(NPC[npc_id2]['gens']['inactive_iter'], copy=True)
+
+        gens['inactive_iter'] = mutate_array(gens['inactive_iter'])
         gens_num['inactive_iter'] = digits2int(gens['inactive_iter']) + 1
-        
+
         if SHOW:
             print(f"Child: Number of inactive iterations after sending a signal = {gens_num['inactive_iter']}")
-            
+
         # Exponential factor saturation response of the signals.
         if np.random.rand() > 0.5:
-            gens['exp_response'] = NPC[npc_id1]['gens']['exp_response']
+            gens['exp_response'] = np.array(NPC[npc_id1]['gens']['exp_response'], copy=True)
         else:
-            gens['exp_response'] = NPC[npc_id2]['gens']['exp_response']
-        
+            gens['exp_response'] = np.array(NPC[npc_id2]['gens']['exp_response'], copy=True)
+
+        gens['exp_response'] = mutate_array(gens['exp_response'])
         gens_num['exp_response'] = digits2int(gens['exp_response'])//10 + 1
-        
+
         if SHOW:
             print(f"Child: Exponential factor saturation response of the signals = {gens_num['exp_response']}")
 
         # Number of iterations that the neuron is weakened after sending a signal.
         if np.random.rand() > 0.5:
-            gens['weakened_iter'] = NPC[npc_id1]['gens']['weakened_iter']
+            gens['weakened_iter'] = np.array(NPC[npc_id1]['gens']['weakened_iter'], copy=True)
         else:
-            gens['weakened_iter'] = NPC[npc_id2]['gens']['weakened_iter']
-        
+            gens['weakened_iter'] = np.array(NPC[npc_id2]['gens']['weakened_iter'], copy=True)
+
+        gens['weakened_iter'] = mutate_array(gens['weakened_iter'])
         gens_num['weakened_iter'] = gens_num['inactive_iter'] + digits2int(gens['weakened_iter']) + 1
-        
+
         if SHOW:
             print(f"Child: Number of weakened iterations after sending a signal = {gens_num['weakened_iter']}")
-        
+
         ######################################################################################################
         # Print in ATCG format just for fun.
         if SHOW_ATCG:
             print()
             for x in gens:
                 print(f'Child: {x}:', end='\n')
-                
+
                 if type(gens[x]) != dict:
-                    if len(gens[x].shape) == 1:
+                    if hasattr(gens[x], 'shape') and len(gens[x].shape) == 1:
                         print('    ' + ''.join([ATCG_MAPPING[j] for j in gens[x]]))
-                    else:
+                    elif hasattr(gens[x], 'shape'):
                         for i in range(gens[x].shape[0]):
                             print('    ' + ''.join([ATCG_MAPPING[j] for j in gens[x][i, :]]))
+                    else:
+                        print(f'    {gens[x]}')
                 else:
                     for y in gens[x]:
                         print(f'Child: {y}:', end='\n')
@@ -706,14 +770,13 @@ def offspring(npc_id1, npc_id2):
                         else:
                             for i in range(gens[x][y].shape[0]):
                                 print('    ' + ''.join([ATCG_MAPPING[j] for j in gens[x][y][i, :]]))
-                        
-        
+
         if SHOW or SHOW_ATCG:
             print(100 * '=')
-            
-        print('Child: Gerou os genes com sucesso!')        
 
-    return gens, gens_num    
+        print('Child: Gerou os genes com sucesso!')
+
+    return gens, gens_num   
     
 def extras(npc_id):
     NPC[npc_id]['neuron_signals'] = {}
