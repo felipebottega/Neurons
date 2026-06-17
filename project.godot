@@ -24,6 +24,10 @@ config/icon="uid://b03ntfp37ywyc"
 
 Global="*res://autoload/global.tscn"
 
+[debug]
+
+settings/stdout/print_fps=true
+
 [display]
 
 window/size/viewport_width=640

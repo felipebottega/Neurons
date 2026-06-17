@@ -49,10 +49,7 @@ async def websocket_endpoint(websocket: WebSocket):
     print("✅ Conexão WebSocket estabelecida")
     global blob_history
 
-    try:
-        counter = 0
-        mod = 5
-        
+    try:        
         while True:
             try:
                 data = await websocket.receive_text()  # Recebe mensagem do client
@@ -88,11 +85,6 @@ async def websocket_endpoint(websocket: WebSocket):
                         NPC[npc_id]['gens'] = gens  # Memoriza o código genético puro
                         extras(npc_id)  # Inclui mais elementos necessários para os processamentos
                     elif npc_action == "process" and npc_id in NPC:
-                        # Faz apenas alguns dos blobs por request
-                        if int_id != 0:
-                            if int_id % mod != counter & mod:
-                                continue                 
-                    
                         outputs = process_npc(npc_id, inputs)  # Processa os inputs e determina a ação
                         results.append({"id": npc_id, 
                                         "outputs": outputs, 
@@ -116,7 +108,6 @@ async def websocket_endpoint(websocket: WebSocket):
                    
             response = json.dumps({"results": results})  # Cria a resposta com os resultados
             await websocket.send_text(response)  # Envia a resposta ao cliente
-            counter += 1
             
     except Exception as e:
         print("⚠️ Erro na conexão WebSocket:", e)
@@ -831,7 +822,7 @@ def process_npc_neurons_blob_0(npc_id, neuron_signals, neuron_thrs, neuron_conne
     if it_real % N == 0 or it_real < N: 
         it += 1        
         
-    #print(f'Processando sinais - iteração {it_real} ({fps_real} it/s)')
+    print(f'Processando sinais - iteração {it_real} ({fps_real} it/s)')
     
     npc = NPC[npc_id]
     neuron_inactive_counter = npc['inactive_counter']

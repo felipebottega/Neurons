@@ -1,11 +1,15 @@
 extends Node
 
+
 var blob_scene: PackedScene = preload("res://scenes/blob.tscn")
 @export var websocket_url : String = "ws://127.0.0.1:8000/ws"  # URL do servidor WebSocket
 var socket : WebSocketPeer  # Instância do cliente WebSocket
 var connected : bool = false  # Flag de conexão
 var waiting_server = true
 var num_blobs = 0
+var neural_frame_skip = 2    # processa o cérebro a cada 3 frames visuais
+var process_mod = 10    # processa aproximadamente 1/5 dos blobs por ciclo neural
+
 
 func _ready():
 	socket = WebSocketPeer.new()  # cria a instância
@@ -48,7 +52,8 @@ func _process(_delta):
 				
 			# Processa as computações neuronais frame a frame para todos os blobs.
 			if not waiting_server:
-				process_frame()
+				if Global.frame_count % neural_frame_skip == 0:
+					process_frame()
 
 		# Desconexão.
 		WebSocketPeer.STATE_CLOSING, WebSocketPeer.STATE_CLOSED:
@@ -128,19 +133,28 @@ func process_frame():
 
 	# A variável batch contém os pedidos que serão enviados ao servidor.
 	var batch = []
+	var phase = Global.process_frame_iterator % process_mod
 	
 	for blob_id in Global.blobs_alive:
 		var blob = get_node_or_null("../" + blob_id)
 	
 		if blob:
-			batch.append({"id": blob_id, "inputs": blob.get_inputs(), "npc_action": "process"})
 			blob.LIFE_STEPS += 1
-	
+			
+			var numeric_id = int(blob_id.split("_")[-1])
+			
+			if numeric_id !=0 and numeric_id % process_mod != phase:
+				continue
+				
+			batch.append({"id": blob_id, "inputs": blob.get_inputs(), "npc_action": "process"})
+			
 	# Atualiza informações no heads-up display.
-	update_hud()
+	if Global.process_frame_iterator % 10 == 0:
+		update_hud()
 		
 	# Envia pedido para o servidor.
-	send_to_server(batch)
+	if len(batch) > 0:
+		send_to_server(batch)
 	
 	# Atualiza frame.
 	Global.process_frame_iterator += 1
