@@ -944,16 +944,14 @@ def update_connections_weakening(npc_id, e_orig, e_now, neuron):
     my_strengths = neuron_connection_strengths[neuron]
     
     for neuron2 in list(e_now[neuron].keys()): 
-        if neuron2 not in neuron_outputs or neuron2 not in neuron_intputs:
-            continue
+        if neuron not in neuron_outputs and neuron not in neuron_intputs and neuron2 not in neuron_outputs and neuron2 not in neuron_intputs:            
+            e = e_now[neuron][neuron2] - e_orig**2
             
-        e = e_now[neuron][neuron2] - e_orig**2
-        
-        if e < 0:
-            my_connections.remove(neuron2) 
-            del my_strengths[neuron2]
-        else:
-            my_strengths[neuron2] = e            
+            if e < 0:
+                my_connections.remove(neuron2) 
+                del my_strengths[neuron2]
+            else:
+                my_strengths[neuron2] = e            
         
     return 
     
