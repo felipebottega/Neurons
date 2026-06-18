@@ -142,3 +142,9 @@ python server.py
 <p align="center">
    <img width="1100" src="https://github.com/user-attachments/assets/7f5f1077-d107-4f8a-b059-aeeaecd5bceb" />
 </p>
+
+## Future workd
+- [ ] Implement parallelism.
+- [ ] Weak environmental observability: lack of explicit food direction/gradient.
+- [ ] Eliminate blob_0.
+- [ ] Improve the reward, as it is not used as a direct neural learning signal.
