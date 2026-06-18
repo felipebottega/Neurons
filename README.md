@@ -45,15 +45,6 @@ The Python server processes the neural logic, while Godot handles the world simu
 - History logging for neural activity and connection growth
 - Plot scripts for visualizing simulation data
 
-## Project structure
-
-- `server.py` — Python FastAPI WebSocket server responsible for brain generation, processing, and offspring creation
-- `scripts/` — Godot scripts for blobs, food, simulation flow, and networking
-- `scenes/` — Godot scenes for the main world, blobs, food, HUD, and helper nodes
-- `autoload/` — Global state shared across the simulation
-- `plot_neurons.py` — Visualization script for neuron activity and connection history
-- `artigo/` — LaTeX article describing the model conceptually
-
 ## How it works
 
 ### 1. Brain generation
