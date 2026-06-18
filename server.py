@@ -770,17 +770,30 @@ def offspring(npc_id1, npc_id2):
     return gens, gens_num   
     
 def extras(npc_id):
-    NPC[npc_id]['neuron_signals'] = {}
-    NPC[npc_id]['connection_strengths'] = {}
-    NPC[npc_id]['inactive_counter'] = {neuron: NPC[npc_id]['inactive_iter'] for neuron in NPC[npc_id]['connections']}
-    NPC[npc_id]['num_connections'] = sum([len(NPC[npc_id]['connections'][neuron]) for neuron in NPC[npc_id]['connections']])
-    NPC[npc_id]['num_childs'] = 0
-    
-    for neuron in NPC[npc_id]['connections']:
-        NPC[npc_id]['connection_strengths'][neuron] = {}
-        for neuron2 in NPC[npc_id]['connections'][neuron]:
-            NPC[npc_id]['connection_strengths'][neuron][neuron2] = 1
-                
+    npc = NPC[npc_id]
+
+    npc['neuron_signals'] = {}
+    npc['connection_strengths'] = {}
+    npc['inactive_counter'] = {
+        neuron: npc['inactive_iter']
+        for neuron in npc['connections']
+    }
+
+    # Mantém o mesmo significado de antes, mas sem recalcular toda hora.
+    npc['num_connections'] = sum(len(conns) for conns in npc['connections'].values())
+    npc['num_connections_count'] = npc['num_connections']
+
+    # Estrutura auxiliar só para acelerar:
+    # - "neuron2 in my_connections"
+    # - remoções
+    # A lista original continua sendo a fonte de verdade para a ordem.
+    npc['connections_set'] = {neuron: set(conns) for neuron, conns in npc['connections'].items()}
+
+    npc['num_childs'] = 0
+
+    for neuron, conns in npc['connections'].items():
+        npc['connection_strengths'][neuron] = {neuron2: 1 for neuron2 in conns}
+
     return
 
 def digits2int(digits):
@@ -816,64 +829,65 @@ def process_npc_neurons_blob_0(npc_id, neuron_signals, neuron_thrs, neuron_conne
     global it
     global it_real
     global start
+
     it_real += 1
-    
+
     if it_real == 0:
         start = time.time()
         fps_real = ''
     else:
-        end_frame = time.time()
-        total_time = end_frame - start
+        total_time = time.time() - start
         fps_real = int(it_real / total_time)
-    
-    if it_real % N == 0 or it_real < N: 
-        it += 1        
-        
+
+    if it_real % N == 0 or it_real < N:
+        it += 1
+
     print(f'Processando sinais - iteração {it_real} ({fps_real} it/s)')
-    
+
     npc = NPC[npc_id]
     neuron_inactive_counter = npc['inactive_counter']
     neuron_inactive_iter = npc['inactive_iter']
-    
-    # Propaga os sinais de neurônios para neurônios.
+
     neuron_signals_tmp = {}
     to_zero = []
-    
+
+    exp_response_local = exp_response
+    update_strengthening = update_connections_strengthening
+    create_conn = create_new_connections
+    update_weakening = update_connections_weakening
+
     for neuron, signal in neuron_signals.items():
-        thr = neuron_thrs[neuron]        
-        
+        thr = neuron_thrs[neuron]
+
         blob_history.append(f'{it} {neuron} {signal}\n')
-        
-        if signal > thr:
-                    
-            if neuron_inactive_counter[neuron] == neuron_inactive_iter:
-                neuron_inactive_counter[neuron] -= 1
-                                    
-                signal = exp_response(signal, exp_factor)
-                to_zero.append(neuron)
-                
-                for neuron2 in neuron_connections[neuron]: 
-                    e = (1 + e_now[neuron][neuron2]) / 2            
-                    update_connections_strengthening(npc_id, e, neuron, neuron2)
-                    
-                    if neuron2 in neuron_signals_tmp:
-                        neuron_signals_tmp[neuron2] += e * signal  
-                    else:
-                        neuron_signals_tmp[neuron2] = e * signal
-                        
-                # Depois de repassar os sinais, checa se algum outro neurônio na região também está com sinal e tenta criar uma conexão.
-                create_new_connections(npc_id, neuron)
-                                                    
-        # Período de retração do neurônio. Acaba quando o contador ficar negativo.
+
+        if signal > thr and neuron_inactive_counter[neuron] == neuron_inactive_iter:
+            neuron_inactive_counter[neuron] -= 1
+
+            signal = exp_response_local(signal, exp_factor)
+            to_zero.append(neuron)
+
+            conn_list = neuron_connections[neuron]
+            conn_strengths = e_now[neuron]
+
+            for neuron2 in conn_list:
+                e = (1 + conn_strengths[neuron2]) / 2
+                update_strengthening(npc_id, e, neuron, neuron2)
+
+                if neuron2 in neuron_signals_tmp:
+                    neuron_signals_tmp[neuron2] += e * signal
+                else:
+                    neuron_signals_tmp[neuron2] = e * signal
+
+            create_conn(npc_id, neuron)
+
         if neuron_inactive_counter[neuron] != neuron_inactive_iter:
             neuron_inactive_counter[neuron] -= 1
-            
             if neuron_inactive_counter[neuron] < 0:
                 neuron_inactive_counter[neuron] = neuron_inactive_iter
-                
-        # Atualiza o decaimento da força das conexões do neurônio.
-        update_connections_weakening(npc_id, e_orig, e_now, neuron)
-                
+
+        update_weakening(npc_id, e_orig, e_now, neuron)
+
     return neuron_signals_tmp, to_zero
     
 def process_npc_neurons(npc_id, neuron_signals, neuron_thrs, neuron_connections, e_orig, e_now, exp_factor):
@@ -920,123 +934,142 @@ def process_npc_neurons(npc_id, neuron_signals, neuron_thrs, neuron_connections,
     
 def create_new_connections(npc_id, neuron):
     npc = NPC[npc_id]
+
     a, b, c = npc['dims']
     radius_x, radius_y, radius_z = npc['regions'][neuron]
-    #neuron_x, neuron_y, neuron_z = [int(x) for x in neuron.split('-')]
-    neuron_x, neuron_y, neuron_z = neuron % a, (neuron // a) % b, neuron // (a * b)
+
+    neuron_x = neuron % a
+    neuron_y = (neuron // a) % b
+    neuron_z = neuron // (a * b)
+
     neuron_probs = npc['probs'][neuron]
     neuron_signals = npc['neuron_signals']
     neuron_connections = npc['connections']
+    neuron_connections_set = npc['connections_set']
     neuron_connection_strengths = npc['connection_strengths']
+
     my_connections = neuron_connections[neuron]
+    my_connections_set = neuron_connections_set[neuron]
     my_strengths = neuron_connection_strengths[neuron]
-    range1 = range(max(0, neuron_x - radius_x), min(a, neuron_x + radius_x)) 
-    range2 = range(max(0, neuron_y - radius_y), min(b, neuron_y + radius_y)) 
-    range3 = range(max(0, neuron_z - radius_z), min(c, neuron_z + radius_z)) 
-    
-    # ECONOMIA: Percorre apenas alguns neurõnios da região para tentar criar novas conexões.
+
+    range1 = range(max(0, neuron_x - radius_x), min(a, neuron_x + radius_x))
+    range2 = range(max(0, neuron_y - radius_y), min(b, neuron_y + radius_y))
+    range3 = range(max(0, neuron_z - radius_z), min(c, neuron_z + radius_z))
+
+    # Mantém exatamente a mesma ideia de amostragem parcial.
     range1 = random.sample(range1, 1 + len(range1) // 2) if len(range1) > 1 else range1
     range2 = random.sample(range2, 1 + len(range2) // 2) if len(range2) > 1 else range2
     range3 = random.sample(range3, 1 + len(range3) // 2) if len(range3) > 1 else range3
-    candidates = [i + j*a + k*a*b for i in range1 for j in range2 for k in range3]    
-    
-    for neuron2 in candidates:
-        # Antes de começar qualquer coisa, faz um teste de probabilidade.
-        if neuron_probs < np.random.rand():
-            continue
-                
-        # Verifica se o neurônio está no dicionário de neurônios com sinal.
-        if neuron2 not in neuron_signals:
-            continue
-                        
-        # Verifica se há atividade no neurônio candidato.
-        if neuron_signals[neuron2] <= 0:
-            continue
-            
-        # Verifica se ainda não há conexão entre estes dois neurônios.
-        if neuron2 not in my_connections and neuron not in neuron_connections[neuron2]:
-            # Se chegou até aqui, a conexão é criada e encerra o loop (uma conexão por loop apenas).
-            my_connections.append(neuron2)          
-            my_strengths[neuron2] = 1         
-            return
 
-    # Percorre todos os neurônios da região para tentar criar novas conexões.
-    #for i in range1:
-    #    for j in range2:
-    #        for k in range3:
-    #            # Antes de começar qualquer coisa, faz um teste de probabilidade.
-    #            if neuron_probs < np.random.rand():
-    #                continue
-    #            
-    #            neuron2 = i + j*a + k*a*b
-    #            
-    #            # Verifica se o neurônio está no dicionário de neurônios com sinal.
-    #            if neuron2 not in neuron_signals:
-    #                continue
-    #                            
-    #            # Verifica se há atividade no neurônio candidato.
-    #            if neuron_signals[neuron2] <= 0:
-    #                continue
-    #                
-    #            # Verifica se ainda não há conexão entre estes dois neurônios.
-    #            if neuron2 not in my_connections and neuron not in neuron_connections[neuron2]:
-    #                # Se chegou até aqui, a conexão é criada e encerra o loop (uma conexão por loop apenas).
-    #                my_connections.append(neuron2)          
-    #                my_strengths[neuron2] = 1
-    #                
-    #                if npc_id == 'blob_0':
-    #                    print(f'{npc_id}: Criou nova conexão!!! {neuron} ===> {neuron2}')   
-    #             
-    #                return
-                        
+    for i in range1:
+        for j in range2:
+            for k in range3:
+                neuron2 = i + j * a + k * a * b
+
+                if neuron_probs < np.random.rand():
+                    continue
+                if neuron2 not in neuron_signals:
+                    continue
+                if neuron_signals[neuron2] <= 0:
+                    continue
+                if neuron2 in my_connections_set or neuron in neuron_connections_set[neuron2]:
+                    continue
+
+                my_connections.append(neuron2)
+                my_connections_set.add(neuron2)
+                my_strengths[neuron2] = 1
+                npc['num_connections_count'] += 1
+                return
+
     return
                         
 def update_connections_weakening(npc_id, e_orig, e_now, neuron):
     npc = NPC[npc_id]
+
     neuron_outputs = npc['outputs']
-    neuron_intputs = npc['inputs']
+    neuron_inputs = npc['inputs']
     neuron_connections = npc['connections']
     neuron_connection_strengths = npc['connection_strengths']
+    neuron_connections_set = npc['connections_set']
+
     my_connections = neuron_connections[neuron]
+    my_connections_set = neuron_connections_set[neuron]
     my_strengths = neuron_connection_strengths[neuron]
-    
-    for neuron2 in list(e_now[neuron].keys()): 
-        if neuron not in neuron_outputs and neuron not in neuron_intputs and neuron2 not in neuron_outputs and neuron2 not in neuron_intputs:            
-            e = e_now[neuron][neuron2] - e_orig**2
-            
-            if e < 0:
-                my_connections.remove(neuron2) 
+
+    blocked = (neuron in neuron_outputs) or (neuron in neuron_inputs)
+
+    for neuron2 in list(e_now[neuron].keys()):
+        if blocked or (neuron2 in neuron_outputs) or (neuron2 in neuron_inputs):
+            continue
+
+        e = e_now[neuron][neuron2] - e_orig**2
+
+        if e < 0:
+            # remove na lista + set, preservando o comportamento original
+            if neuron2 in my_connections_set:
+                my_connections_set.remove(neuron2)
+                my_connections.remove(neuron2)
                 del my_strengths[neuron2]
-            else:
-                my_strengths[neuron2] = e            
-        
-    return 
+                npc['num_connections_count'] -= 1
+        else:
+            my_strengths[neuron2] = e
+
+    return
     
 def update_connections_strengthening(npc_id, e, neuron, neuron2):
     NPC[npc_id]['connection_strengths'][neuron][neuron2] = e
         
     return 
     
-def process_npc_neurons_updates(npc_id, neuron_signals, neuron_signals_tmp, to_zero):
+def update_connections_strengthening(npc_id, e, neuron, neuron2):
     npc = NPC[npc_id]
-    neuron_signals = npc['neuron_signals']
-    neuron_connections = npc['connections']
+    npc['connection_strengths'][neuron][neuron2] = e
+    return
     
-    # Zera os sinais dos neurônios que acabaram de enviar sinal.
-    for neuron in to_zero:    
-        neuron_signals[neuron] = 0
-              
-    # Atualiza os sinais recebidos por cada neurônio. Tem que aplicar essa parte depois de zerar os sinais pois um
-    # neurônio que enviou sinal e ficou zerado pode ter recebido sinal de outro neurônio logo depois.    
-    for neuron in neuron_signals_tmp:
-       neuron_signals[neuron] = neuron_signals_tmp[neuron]
-        
-    npc['num_connections'] = sum([len(neuron_connections[neuron]) for neuron in neuron_connections])
-    
-    if it_real % N == 0 or it_real < N: 
-        num_connections_history.append(f"{npc_id} {it} {npc['num_connections']}\n")
-            
-    return 
+def process_npc_neurons(npc_id, neuron_signals, neuron_thrs, neuron_connections, e_orig, e_now, exp_factor):
+    npc = NPC[npc_id]
+    neuron_inactive_counter = npc['inactive_counter']
+    neuron_inactive_iter = npc['inactive_iter']
+
+    neuron_signals_tmp = {}
+    to_zero = []
+
+    exp_response_local = exp_response
+    update_strengthening = update_connections_strengthening
+    create_conn = create_new_connections
+    update_weakening = update_connections_weakening
+
+    for neuron, signal in neuron_signals.items():
+        thr = neuron_thrs[neuron]
+
+        if signal > thr and neuron_inactive_counter[neuron] == neuron_inactive_iter:
+            neuron_inactive_counter[neuron] -= 1
+
+            signal = exp_response_local(signal, exp_factor)
+            to_zero.append(neuron)
+
+            conn_list = neuron_connections[neuron]
+            conn_strengths = e_now[neuron]
+
+            for neuron2 in conn_list:
+                e = (1 + conn_strengths[neuron2]) / 2
+                update_strengthening(npc_id, e, neuron, neuron2)
+
+                if neuron2 in neuron_signals_tmp:
+                    neuron_signals_tmp[neuron2] += e * signal
+                else:
+                    neuron_signals_tmp[neuron2] = e * signal
+
+            create_conn(npc_id, neuron)
+
+        if neuron_inactive_counter[neuron] != neuron_inactive_iter:
+            neuron_inactive_counter[neuron] -= 1
+            if neuron_inactive_counter[neuron] < 0:
+                neuron_inactive_counter[neuron] = neuron_inactive_iter
+
+        update_weakening(npc_id, e_orig, e_now, neuron)
+
+    return neuron_signals_tmp, to_zero
     
 def process_npc_inputs(npc_id, inputs):
     npc = NPC[npc_id]
@@ -1053,21 +1086,18 @@ def process_npc_inputs(npc_id, inputs):
     
 def process_npc_outputs(npc_id):
     npc = NPC[npc_id]
-    neuron_outputs = NPC[npc_id]['outputs']
+    neuron_outputs = npc['outputs']
     neuron_signals = npc['neuron_signals']
     neuron_outputs_thr = npc['outputs_thr']
-    
-    # Propaga os sinais dos neurônios finais para os outputs.
-    outputs = [0 for i in range(len(neuron_outputs))]
     exp_factor = npc['exp_response']
 
-    for i, neuron in enumerate(neuron_outputs):            
+    outputs = [0] * len(neuron_outputs)
+
+    for i, neuron in enumerate(neuron_outputs):
         if neuron in neuron_signals:
-            signal, thr = neuron_signals[neuron], neuron_outputs_thr[neuron]
-            outputs[i] = 1 if exp_response(signal, exp_factor) > thr else 0
-        else:
-            outputs[i] = 0
-            
+            signal = neuron_signals[neuron]
+            outputs[i] = 1 if exp_response(signal, exp_factor) > neuron_outputs_thr[neuron] else 0
+
     return outputs
                 
 # Inicia o servidor WebSocket local
