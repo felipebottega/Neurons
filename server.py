@@ -7,7 +7,8 @@ import datetime
 import traceback
 import numpy as np
 import matplotlib.pyplot as plt
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
 
 # Global variables.
 NUM_SYMBOLS = 4    # ATCG
@@ -52,9 +53,16 @@ async def websocket_endpoint(websocket: WebSocket):
     try:        
         while True:
             try:
-                data = await websocket.receive_text()  # Recebe mensagem do client
-            except:
+                data = await websocket.receive_text()
+
+            except WebSocketDisconnect:
+                print("Cliente desconectou.")
                 break
+
+            except Exception as e:
+                print("Erro recebendo mensagem:", repr(e))
+                traceback.print_exc()
+                continue
                 
             payload = json.loads(data)  # Converte a mensagem para JSON
             npcs = payload.get("batch", [])  # Obtém os dados dos NPCs
@@ -120,10 +128,9 @@ async def websocket_endpoint(websocket: WebSocket):
         #    f.writelines(blob_history)
         #with open("num_connections_history.txt", "w") as f:
         #    f.writelines(num_connections_history)
-
-        await websocket.close()
-        print("🔒 Conexão WebSocket encerrada.")
-        server.should_exit = True
+        if websocket.client_state != WebSocketState.DISCONNECTED:
+            await websocket.close()
+            print("🔒 Conexão WebSocket encerrada.")
 
 # Função que gera um cérebro simulado. 
 def gen_brain():
