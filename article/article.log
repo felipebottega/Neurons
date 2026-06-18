@@ -1,9 +1,9 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (MiKTeX 24.1) (preloaded format=pdflatex 2024.11.15)  17 JUN 2026 08:08
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (MiKTeX 24.1) (preloaded format=pdflatex 2024.11.15)  18 JUN 2026 15:43
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
-**./resumo.tex
-(resumo.tex
+**./article.tex
+(article.tex
 LaTeX2e <2023-11-01> patch level 1
 L3 programming layer <2024-01-04>
 (C:\Users\Felipe\AppData\Local\Programs\MiKTeX\tex/latex/base\article.cls
@@ -50,16 +50,20 @@ Package: babel 2024/01/07 v24.1 The Babel package
 File: bblopts.cfg 2005/09/08 v0.1 add Arabic and Farsi to "declared" options of
  babel
 )
-(C:\Program Files\MiKTeX\tex/latex/babel-portuges\brazilian.ldf
-Language: portuges 2021/07/09 v1.2t Portuguese support from the babel system
-Package babel Info: Hyphen rules for 'brazilian' set to \l@portuguese
-(babel)             (\language56). Reported on input line 111.
-Package babel Info: Making " an active character on input line 143.
+(C:\Users\Felipe\AppData\Local\Programs\MiKTeX\tex/latex/babel-english\english.
+ldf
+Language: english 2017/06/06 v3.3r English support from the babel system
+Package babel Info: Hyphen rules for 'canadian' set to \l@english
+(babel)             (\language0). Reported on input line 102.
+Package babel Info: Hyphen rules for 'australian' set to \l@ukenglish
+(babel)             (\language73). Reported on input line 105.
+Package babel Info: Hyphen rules for 'newzealand' set to \l@ukenglish
+(babel)             (\language73). Reported on input line 108.
 ))
-(C:\Users\Felipe\AppData\Local\Programs\MiKTeX\tex/generic/babel/locale/pt\babe
-l-brazilian.tex
-Package babel Info: Importing font and identification data for brazilian
-(babel)             from babel-pt-BR.ini. Reported on input line 11.
+(C:\Users\Felipe\AppData\Local\Programs\MiKTeX\tex/generic/babel/locale/en\babe
+l-english.tex
+Package babel Info: Importing font and identification data for english
+(babel)             from babel-en.ini. Reported on input line 11.
 )
 (C:\Users\Felipe\AppData\Local\Programs\MiKTeX\tex/latex/base\inputenc.sty
 Package: inputenc 2021/02/14 v1.3d Input encoding file
@@ -598,23 +602,23 @@ ftex.def
 File: l3backend-pdftex.def 2024-01-04 L3 backend support: PDF output (pdfTeX)
 \l__color_backend_stack_int=\count305
 \l__pdf_internal_box=\box68
-) (resumo.aux)
-\openout1 = `resumo.aux'.
+) (article.aux)
+\openout1 = `article.aux'.
 
-LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 49.
-LaTeX Font Info:    ... okay on input line 49.
-LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 49.
-LaTeX Font Info:    ... okay on input line 49.
-LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 49.
-LaTeX Font Info:    ... okay on input line 49.
-LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 49.
-LaTeX Font Info:    ... okay on input line 49.
-LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 49.
-LaTeX Font Info:    ... okay on input line 49.
-LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 49.
-LaTeX Font Info:    ... okay on input line 49.
-LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 49.
-LaTeX Font Info:    ... okay on input line 49.
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 48.
+LaTeX Font Info:    ... okay on input line 48.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 48.
+LaTeX Font Info:    ... okay on input line 48.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 48.
+LaTeX Font Info:    ... okay on input line 48.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 48.
+LaTeX Font Info:    ... okay on input line 48.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 48.
+LaTeX Font Info:    ... okay on input line 48.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 48.
+LaTeX Font Info:    ... okay on input line 48.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 48.
+LaTeX Font Info:    ... okay on input line 48.
 
 (C:\Users\Felipe\AppData\Local\Programs\MiKTeX\tex/context/base/mkii\supp-pdf.m
 kii
@@ -675,12 +679,12 @@ File: epstopdf-sys.cfg 2021/03/18 v2.0 Configuration of epstopdf for MiKTeX
 * \@reversemarginfalse
 * (1in=72.27pt=25.4mm, 1cm=28.453pt)
 
-LaTeX Font Info:    Trying to load font information for U+msa on input line 50.
+LaTeX Font Info:    Trying to load font information for U+msa on input line 49.
 
 (C:\Users\Felipe\AppData\Local\Programs\MiKTeX\tex/latex/amsfonts\umsa.fd
 File: umsa.fd 2013/01/14 v3.01 AMS symbols A
 )
-LaTeX Font Info:    Trying to load font information for U+msb on input line 50.
+LaTeX Font Info:    Trying to load font information for U+msb on input line 49.
 
 
 (C:\Users\Felipe\AppData\Local\Programs\MiKTeX\tex/latex/amsfonts\umsb.fd
@@ -690,70 +694,81 @@ File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 
 {C:/Users/Felipe/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map}] [2]
 [3]
-Underfull \hbox (badness 10000) in paragraph at lines 236--236
-[]|\T1/cmr/m/n/12 Força si-náp-
+Underfull \hbox (badness 2486) in paragraph at lines 231--231
+[]|\T1/cmr/m/n/12 Neuronal sig-
  []
 
 
-Underfull \hbox (badness 1412) in paragraph at lines 237--237
-[]|\T1/cmr/m/n/12 Threshold in-
+Underfull \hbox (badness 10000) in paragraph at lines 232--232
+[]|\T1/cmr/m/n/12 Synaptic
  []
 
 
-Underfull \hbox (badness 3989) in paragraph at lines 238--238
-[]|\T1/cmr/m/n/12 Threshold de
+Underfull \hbox (badness 2653) in paragraph at lines 232--233
+[]|\T1/cmr/m/n/12 intensity of the di-rected con-nec-tion
  []
 
-[4]
-Underfull \hbox (badness 3547) in paragraph at lines 336--336
-[]|\T1/cmr/m/n/12 dicionário de pa-la-vras
+
+Underfull \hbox (badness 10000) in paragraph at lines 233--233
+[]|\T1/cmr/m/n/12 Internal
  []
 
-[5] [6] [7] [8] [9] [10] [11] [12] [13] [14]
+
+Underfull \hbox (badness 10000) in paragraph at lines 234--234
+[]|\T1/cmr/m/n/12 Output
+ []
+
+[4] [5] [6] [7] [8] [9] [10] [11] [12] [13] [14]
 
 Package pgf Warning: Returning node center instead of a point on node border. D
 id you specify a point identical to the center of node ``r4''? on input line 88
-8.
+7.
 
-[15] [16] [17] [18] [19] [20] [21] [22]
+[15] [16] [17] [18] [19] [20] [21]
 LaTeX Font Info:    Trying to load font information for T1+cmtt on input line 1
-271.
+269.
 
 (C:\Users\Felipe\AppData\Local\Programs\MiKTeX\tex/latex/base\t1cmtt.fd
 File: t1cmtt.fd 2023/04/13 v2.5m Standard LaTeX font definitions
 )
-Overfull \hbox (96.25421pt too wide) in paragraph at lines 1286--1287
+[22]
+Overfull \hbox (90.83737pt too wide) in paragraph at lines 1284--1285
  [][] 
  []
 
 [23] [24]
-Overfull \hbox (148.57173pt too wide) in paragraph at lines 1433--1434
+Overfull \hbox (184.66162pt too wide) in paragraph at lines 1431--1432
  [][] 
  []
 
 [25]
-Underfull \hbox (badness 10000) in paragraph at lines 1464--1464
-[]|\T1/cmr/m/n/12 Processamento dis-tri-buído
+Underfull \hbox (badness 4819) in paragraph at lines 1461--1461
+[]|\T1/cmr/m/n/12 Selection with-out ex-plicit
  []
 
-[26] (resumo.aux)
+
+Underfull \hbox (badness 7221) in paragraph at lines 1462--1462
+[]|\T1/cmr/m/n/12 Distributed back-end pro-
+ []
+
+[26] (article.aux)
  ***********
 LaTeX2e <2023-11-01> patch level 1
 L3 programming layer <2024-01-04>
  ***********
  ) 
 Here is how much of TeX's memory you used:
- 16999 strings out of 474486
- 341445 string characters out of 5743282
- 1947542 words of memory out of 5000000
- 38987 multiletter control sequences out of 15000+600000
+ 16962 strings out of 474486
+ 340818 string characters out of 5743282
+ 1948542 words of memory out of 5000000
+ 38951 multiletter control sequences out of 15000+600000
  577455 words of font info for 86 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 84i,13n,93p,1305b,902s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 84i,13n,93p,1207b,900s stack positions out of 10000i,1000n,20000p,200000b,200000s
  <C:\Users\Felipe\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ect
 t1200.pk> <C:\Users\Felipe\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi
-600\tcrm1200.pk> <C:\Users\Felipe\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen
-/ec/dpi600\ecbx1200.pk> <C:\Users\Felipe\AppData\Local\MiKTeX\fonts/pk/ljfour/j
+600\ecbx1200.pk> <C:\Users\Felipe\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen
+/ec/dpi600\tcrm1200.pk> <C:\Users\Felipe\AppData\Local\MiKTeX\fonts/pk/ljfour/j
 knappen/ec/dpi600\ecbx1440.pk> <C:\Users\Felipe\AppData\Local\MiKTeX\fonts/pk/l
 jfour/jknappen/ec/dpi600\ecti1200.pk> <C:\Users\Felipe\AppData\Local\MiKTeX\fon
 ts/pk/ljfour/jknappen/ec/dpi600\ecrm1200.pk> <C:\Users\Felipe\AppData\Local\MiK
@@ -776,9 +791,9 @@ fb><C:/Users/Felipe/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/c
 m/cmsy10.pfb><C:/Users/Felipe/AppData/Local/Programs/MiKTeX/fonts/type1/public/
 amsfonts/cm/cmsy8.pfb><C:/Users/Felipe/AppData/Local/Programs/MiKTeX/fonts/type
 1/public/amsfonts/symbols/msbm10.pfb>
-Output written on resumo.pdf (26 pages, 361825 bytes).
+Output written on article.pdf (26 pages, 339823 bytes).
 PDF statistics:
- 566 PDF objects out of 1000 (max. 8388607)
+ 519 PDF objects out of 1000 (max. 8388607)
  0 named destinations out of 1000 (max. 500000)
  13 words of extra memory for PDF output out of 10000 (max. 10000000)
 
