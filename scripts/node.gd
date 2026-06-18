@@ -7,8 +7,8 @@ var socket : WebSocketPeer  # Instância do cliente WebSocket
 var connected : bool = false  # Flag de conexão
 var waiting_server = true
 var num_blobs = 0
-var neural_frame_skip = 2    # processa o cérebro a cada 3 frames visuais
-var process_mod = 10    # processa aproximadamente 1/5 dos blobs por ciclo neural
+var neural_frame_skip = 1    # processa o cérebro a cada N frames visuais
+var process_mod = 1    # processa aproximadamente 1/N dos blobs por ciclo neural
 
 
 func _ready():
