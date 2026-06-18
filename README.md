@@ -5,7 +5,7 @@ A small experimental simulation of **artificial neuronal evolution** built with 
 The project explores a different path from standard neural networks: instead of training a fixed architecture, each agent owns a **genetically encoded 3D brain**. That brain is then used during a simulation where agents move, sense the environment, consume food, reproduce, and pass on modified neural structures to offspring.
 
 <p align="center">
-   <img width="800" height="538" alt="image" src="https://github.com/user-attachments/assets/0187166e-5d2d-4a8f-8c52-9cf3c5c27081" />
+   <img width="1100" src="https://github.com/user-attachments/assets/0187166e-5d2d-4a8f-8c52-9cf3c5c27081" />
 </p>
 
 ## Overview
