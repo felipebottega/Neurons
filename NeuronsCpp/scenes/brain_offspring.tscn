@@ -1,0 +1,165 @@
+[gd_scene format=3 uid="uid://684n0wm3qjdd"]
+
+[ext_resource type="Script" uid="uid://ddxr2v665vwb3" path="res://scripts/brain_offspring.gd" id="1_miv42"]
+[ext_resource type="Script" uid="uid://ddc47eswjmgt1" path="res://scripts/histogram.gd" id="3_r0x27"]
+[ext_resource type="Script" uid="uid://cwyfb7ye11myc" path="res://scripts/heatmap.gd" id="4_cumgd"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_7ag8p"]
+bg_color = Color(0, 0, 0, 1)
+
+[sub_resource type="Theme" id="Theme_miv42"]
+TooltipPanel/styles/panel = SubResource("StyleBoxFlat_7ag8p")
+
+[node name="BrainOffspring" type="Node2D" unique_id=1422867934]
+script = ExtResource("1_miv42")
+metadata/_edit_vertical_guides_ = [905.0, 823.0, 1067.0]
+
+[node name="Label" type="RichTextLabel" parent="." unique_id=192681714]
+offset_left = 1241.0
+offset_top = 11.0
+offset_right = 1557.0
+offset_bottom = 602.0
+text = "Genetic Parameters"
+
+[node name="GenerateOffspring" type="Button" parent="." unique_id=1894957734]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1243.0
+offset_top = 684.0
+offset_right = 1474.0
+offset_bottom = 726.0
+theme_override_font_sizes/font_size = 24
+text = "Generate Offspring"
+
+[node name="LoadBrain1" type="Button" parent="." unique_id=1252262134]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1243.0
+offset_top = 739.0
+offset_right = 1405.0
+offset_bottom = 781.0
+theme_override_font_sizes/font_size = 24
+text = "Load Brain 1"
+
+[node name="LoadBrain2" type="Button" parent="." unique_id=950212516]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1243.0
+offset_top = 794.0
+offset_right = 1405.0
+offset_bottom = 836.0
+theme_override_font_sizes/font_size = 24
+text = "Load Brain 2"
+
+[node name="LineEdit" type="LineEdit" parent="." unique_id=252851437]
+offset_left = 1243.0
+offset_top = 625.0
+offset_right = 1433.0
+offset_bottom = 672.0
+tooltip_text = "Mutation probability per digit. Must be between 0 and 1."
+placeholder_text = "Mutation Probability"
+
+[node name="SaveBrain" type="Button" parent="." unique_id=739948392]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1438.0
+offset_top = 739.0
+offset_right = 1568.0
+offset_bottom = 781.0
+theme_override_font_sizes/font_size = 24
+text = "Save Brain"
+
+[node name="HistogramLabel" type="Label" parent="." unique_id=1269608791]
+offset_left = 641.0
+offset_top = 98.0
+offset_right = 828.0
+offset_bottom = 121.0
+theme_override_colors/font_color = Color(0.8862745, 0.15686275, 0.15686275, 1)
+text = "Parameters Distribution"
+
+[node name="HistogramSliceSelector" type="OptionButton" parent="." unique_id=1604430736]
+offset_left = 600.0
+offset_top = 305.0
+offset_right = 640.0
+offset_bottom = 325.0
+
+[node name="HistogramParameterSelector" type="OptionButton" parent="." unique_id=2130757147]
+offset_left = 724.0
+offset_top = 305.0
+offset_right = 764.0
+offset_bottom = 325.0
+
+[node name="Histogram" type="Control" parent="." unique_id=903146397]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 627.0
+offset_top = 135.0
+offset_right = 887.0
+offset_bottom = 297.0
+script = ExtResource("3_r0x27")
+
+[node name="HeatmapLabel" type="Label" parent="." unique_id=1224104841]
+offset_left = 658.0
+offset_top = 410.0
+offset_right = 827.0
+offset_bottom = 433.0
+tooltip_text = "Activation threshold: 0 means the neuron is easiest to activate, while 1 means it is 
+hardest. Input neurons are always assigned a threshold of 0, so differences may 
+appear even when the activation-threshold genes are identical.
+
+Decay factor: Lower values correspond to slower decay of neuronal 
+activity, while higher values correspond to faster decay.
+
+Memory factor: 0 means previous neuronal activity has no persistence, 
+while 1 means past activity has the strongest influence on the current state.
+
+Hebbian plasticity rate: 0 means no Hebbian weight adaptation, while higher 
+values mean stronger synaptic modification driven by correlated neuronal 
+activity.
+
+Modulatory release factor: 0 means neuronal activity does not release the local 
+modulatory signal, while 1 corresponds to the strongest genetically defined release.
+
+Modulatory sensitivity: -1 corresponds to the strongest negative response to the 
+modulatory field, 0 means no response, and +1 corresponds to the strongest positive 
+response.
+
+Polarity factor: -1 represents an inhibitory neuron and +1 represents an 
+excitatory neuron.
+
+Connection energy: Values range from -1 to +1 and represent the genetically 
+generated spatial connection field. Lower values correspond to regions less 
+favored by the connection gene, while higher values correspond to regions 
+more strongly favored.
+
+Neuron role: -1 represents an input neuron, 0 represents an internal neuron, and 
++1 represents an output neuron.
+
+Incoming connections: The value is the number of connections received by each 
+neuron. The displayed range goes from the minimum to the maximum incoming 
+degree found in the entire brain.
+
+For every parameter, the color scale is global across the whole brain. Therefore, 
+the same color always represents the same value in every slice."
+mouse_filter = 1
+theme = SubResource("Theme_miv42")
+theme_override_colors/font_color = Color(0.8862745, 0.15686275, 0.15686275, 1)
+theme_override_font_sizes/font_size = 16
+text = "Parameters Heatmap"
+
+[node name="HeatmapSliceSelector" type="OptionButton" parent="." unique_id=722649530]
+offset_left = 600.0
+offset_top = 733.0
+offset_right = 640.0
+offset_bottom = 753.0
+
+[node name="HeatmapParameterSelector" type="OptionButton" parent="." unique_id=1959857785]
+offset_left = 724.0
+offset_top = 733.0
+offset_right = 764.0
+offset_bottom = 753.0
+
+[node name="Heatmap" type="Control" parent="." unique_id=1005137174]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 636.0
+offset_top = 444.0
+offset_right = 911.0
+offset_bottom = 676.0
+script = ExtResource("4_cumgd")

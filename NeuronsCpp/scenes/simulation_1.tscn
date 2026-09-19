@@ -1,0 +1,183 @@
+[gd_scene format=3 uid="uid://lmcb1reyf45b"]
+
+[ext_resource type="Script" path="res://scripts/simulations/simulation_1.gd" id="1_cmbvs"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_7ag8p"]
+bg_color = Color(0, 0, 0, 1)
+
+[sub_resource type="Theme" id="Theme_sx4as"]
+TooltipPanel/styles/panel = SubResource("StyleBoxFlat_7ag8p")
+
+[node name="Simulation1" type="Node2D" unique_id=1422867934]
+script = ExtResource("1_cmbvs")
+agent_speed = 400.0
+metadata/_edit_horizontal_guides_ = [86.0]
+
+[node name="LineEdit" type="LineEdit" parent="." unique_id=178173070]
+offset_left = 1304.0
+offset_top = 95.0
+offset_right = 1411.0
+offset_bottom = 126.0
+tooltip_text = "Dimension I"
+placeholder_text = "Dimension I"
+metadata/_edit_use_anchors_ = true
+
+[node name="LineEdit2" type="LineEdit" parent="." unique_id=846846651]
+offset_left = 1304.0
+offset_top = 130.0
+offset_right = 1414.0
+offset_bottom = 161.0
+placeholder_text = "Dimension J"
+metadata/_edit_use_anchors_ = true
+
+[node name="LineEdit3" type="LineEdit" parent="." unique_id=1511679268]
+offset_left = 1304.0
+offset_top = 166.0
+offset_right = 1414.0
+offset_bottom = 197.0
+placeholder_text = "Dimension K"
+metadata/_edit_use_anchors_ = true
+
+[node name="LineEdit4" type="LineEdit" parent="." unique_id=1751646441]
+offset_left = 1304.0
+offset_top = 204.0
+offset_right = 1461.0
+offset_bottom = 235.0
+placeholder_text = "Generation Time"
+metadata/_edit_use_anchors_ = true
+
+[node name="LineEdit5" type="LineEdit" parent="." unique_id=514459578]
+offset_left = 1304.0
+offset_top = 243.0
+offset_right = 1475.0
+offset_bottom = 274.0
+tooltip_text = "Mutation probability per digit. Must be between 0 and 1."
+placeholder_text = "Mutation Probability"
+
+[node name="Speed" type="OptionButton" parent="." unique_id=2071458667]
+offset_left = 1389.0
+offset_top = 287.0
+offset_right = 1457.0
+offset_bottom = 318.0
+tooltip_text = "Mutation probability per digit. Must be between 0 and 1."
+selected = 0
+item_count = 6
+popup/item_0/text = "1x"
+popup/item_0/id = 0
+popup/item_1/text = "2x"
+popup/item_1/id = 1
+popup/item_2/text = "4x"
+popup/item_2/id = 2
+popup/item_3/text = "8x"
+popup/item_3/id = 3
+popup/item_4/text = "16x"
+popup/item_4/id = 4
+popup/item_5/text = "32x"
+popup/item_5/id = 5
+
+[node name="SpeedLabel" type="Label" parent="." unique_id=696370801]
+offset_left = 1305.0
+offset_top = 287.0
+offset_right = 1378.0
+offset_bottom = 318.0
+theme_override_font_sizes/font_size = 22
+text = "Speed"
+
+[node name="Label" type="Label" parent="." unique_id=1771166034]
+offset_left = 1302.0
+offset_top = 61.0
+offset_right = 1520.0
+offset_bottom = 92.0
+theme_override_font_sizes/font_size = 22
+text = "External Parameters"
+metadata/_edit_use_anchors_ = true
+
+[node name="Start" type="Button" parent="." unique_id=1894957734]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1301.0
+offset_top = 384.0
+offset_right = 1454.0
+offset_bottom = 426.0
+theme_override_font_sizes/font_size = 24
+text = "Start"
+metadata/_edit_use_anchors_ = true
+
+[node name="Pause" type="Button" parent="." unique_id=1252262134]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1474.0
+offset_top = 384.0
+offset_right = 1606.0
+offset_bottom = 426.0
+theme_override_font_sizes/font_size = 24
+text = "Pause"
+metadata/_edit_use_anchors_ = true
+
+[node name="Save" type="Button" parent="." unique_id=825599750]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1301.0
+offset_top = 438.0
+offset_right = 1454.0
+offset_bottom = 480.0
+theme_override_font_sizes/font_size = 24
+text = "Save"
+metadata/_edit_use_anchors_ = true
+
+[node name="FreeMode" type="Button" parent="." unique_id=1611196595]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1301.0
+offset_top = 493.0
+offset_right = 1454.0
+offset_bottom = 535.0
+theme_override_font_sizes/font_size = 24
+text = "Free Mode"
+metadata/_edit_use_anchors_ = true
+
+[node name="Load" type="Button" parent="." unique_id=1107466970]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1474.0
+offset_top = 438.0
+offset_right = 1606.0
+offset_bottom = 480.0
+theme_override_font_sizes/font_size = 24
+text = "Load"
+metadata/_edit_use_anchors_ = true
+
+[node name="Summary" type="Label" parent="." unique_id=393369027]
+offset_left = 17.0
+offset_top = 57.0
+offset_right = 360.0
+offset_bottom = 836.0
+theme_override_font_sizes/font_size = 18
+text = "Summary"
+
+[node name="AgentInfo" type="Label" parent="." unique_id=773878548]
+offset_left = 1288.0
+offset_top = 579.0
+offset_right = 1657.0
+offset_bottom = 854.0
+theme_override_font_sizes/font_size = 18
+
+[node name="Title" type="Label" parent="." unique_id=735342270]
+offset_left = 775.0
+offset_top = 54.0
+offset_right = 974.0
+offset_bottom = 88.0
+tooltip_text = "Score measures the agent's performance at a specific moment, 
+based on its current position relative to the target. 
+Higher scores indicate that the agent is closer to the target.
+
+Fitness measures the agent's overall performance during the entire 
+simulation round. It is the time average of the score, so agents that 
+remain close to the target for longer receive higher fitness.
+
+Evolution selects the three best agents according to fitness, rather 
+than only their final score."
+mouse_filter = 1
+theme = SubResource("Theme_sx4as")
+theme_override_colors/font_color = Color(0.8862745, 0.15686275, 0.15686275, 1)
+theme_override_font_sizes/font_size = 24
+text = "Simulation Space"
+metadata/_edit_use_anchors_ = true
+
+[node name="SimulationSpace" type="Node2D" parent="." unique_id=1010751342]
+position = Vector2(553, 132)

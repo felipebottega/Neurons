@@ -1,0 +1,77 @@
+[gd_scene format=3 uid="uid://cnm2xn23ubuhw"]
+
+[ext_resource type="Script" uid="uid://c22sh16bkagq5" path="res://scripts/brain_failures.gd" id="1_ejqma"]
+
+[node name="BrainFailures" type="Node2D" unique_id=1422867934]
+script = ExtResource("1_ejqma")
+metadata/_edit_vertical_guides_ = [904.0, 823.0, 566.0]
+
+[node name="LineEdit" type="LineEdit" parent="." unique_id=178173070]
+offset_left = 1304.0
+offset_top = 87.0
+offset_right = 1411.0
+offset_bottom = 118.0
+tooltip_text = "Dimension I"
+placeholder_text = "Dimension I"
+
+[node name="LineEdit2" type="LineEdit" parent="." unique_id=846846651]
+offset_left = 1304.0
+offset_top = 122.0
+offset_right = 1414.0
+offset_bottom = 153.0
+placeholder_text = "Dimension J"
+
+[node name="LineEdit3" type="LineEdit" parent="." unique_id=1511679268]
+offset_left = 1304.0
+offset_top = 158.0
+offset_right = 1414.0
+offset_bottom = 189.0
+placeholder_text = "Dimension K"
+
+[node name="LineEdit4" type="LineEdit" parent="." unique_id=482745513]
+offset_left = 1304.0
+offset_top = 193.0
+offset_right = 1457.0
+offset_bottom = 224.0
+placeholder_text = "Number of Inputs"
+
+[node name="LineEdit5" type="LineEdit" parent="." unique_id=1765873256]
+offset_left = 1304.0
+offset_top = 227.0
+offset_right = 1461.0
+offset_bottom = 258.0
+placeholder_text = "Number of Outputs"
+
+[node name="Label" type="Label" parent="." unique_id=1771166034]
+offset_left = 1302.0
+offset_top = 53.0
+offset_right = 1520.0
+offset_bottom = 84.0
+theme_override_font_sizes/font_size = 22
+text = "External Parameters"
+
+[node name="Start" type="Button" parent="." unique_id=1894957734]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1303.0
+offset_top = 296.0
+offset_right = 1487.0
+offset_bottom = 338.0
+theme_override_font_sizes/font_size = 24
+text = "Start
+"
+
+[node name="Stop" type="Button" parent="." unique_id=1252262134]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1498.0
+offset_top = 296.0
+offset_right = 1628.0
+offset_bottom = 338.0
+theme_override_font_sizes/font_size = 24
+text = "Stop"
+
+[node name="BrainInfoLabel" type="Label" parent="." unique_id=393369027]
+offset_left = 30.0
+offset_top = 9.0
+offset_right = 373.0
+offset_bottom = 788.0
+theme_override_font_sizes/font_size = 15

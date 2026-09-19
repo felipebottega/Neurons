@@ -1,0 +1,9 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+*.html
+*.aux
+*.log
+*.out
+*.gz
+*.tex

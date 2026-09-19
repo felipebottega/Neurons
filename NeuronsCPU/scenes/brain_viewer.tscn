@@ -1,0 +1,194 @@
+[gd_scene format=3 uid="uid://ch12xd8770bas"]
+
+[ext_resource type="Script" uid="uid://3aseionodjj0" path="res://scripts/brain_viewer.gd" id="1_h3bh5"]
+
+[node name="BrainViewer" type="Node3D" unique_id=716599046]
+script = ExtResource("1_h3bh5")
+metadata/_edit_vertical_guides_ = [1045.0, 1186.0]
+
+[node name="Neurons" type="MultiMeshInstance3D" parent="." unique_id=272666869]
+
+[node name="Connections" type="MeshInstance3D" parent="." unique_id=386697745]
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=82844452]
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1918044610]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=176896562]
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=663638357]
+
+[node name="UI" type="Control" parent="CanvasLayer" unique_id=906969161]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="ShowNeurons" type="CheckButton" parent="CanvasLayer/UI" unique_id=1798180254]
+layout_mode = 0
+offset_left = 1446.0
+offset_top = 504.0
+offset_right = 1636.0
+offset_bottom = 535.0
+text = "Show Neurons"
+
+[node name="ShowConnections" type="CheckButton" parent="CanvasLayer/UI" unique_id=1655643116]
+layout_mode = 0
+offset_left = 1446.0
+offset_top = 549.0
+offset_right = 1636.0
+offset_bottom = 580.0
+text = "Show Connections"
+
+[node name="NeuronSizeSlider" type="HSlider" parent="CanvasLayer/UI" unique_id=1593157037]
+layout_mode = 0
+offset_left = 1453.0
+offset_top = 620.0
+offset_right = 1633.0
+offset_bottom = 636.0
+
+[node name="Label" type="Label" parent="CanvasLayer/UI/NeuronSizeSlider" unique_id=1170774227]
+layout_mode = 0
+offset_left = -2.0
+offset_top = -26.0
+offset_right = 92.0
+offset_bottom = -3.0
+text = "Neuron Size"
+
+[node name="ConnectionOpacitySlider" type="HSlider" parent="CanvasLayer/UI" unique_id=1072991290]
+layout_mode = 0
+offset_left = 1454.0
+offset_top = 680.0
+offset_right = 1632.0
+offset_bottom = 696.0
+
+[node name="Label" type="Label" parent="CanvasLayer/UI/ConnectionOpacitySlider" unique_id=347932515]
+layout_mode = 0
+offset_left = -3.0
+offset_top = -26.0
+offset_right = 149.0
+offset_bottom = -3.0
+text = "Connection Opacity"
+
+[node name="BrainInfoLabel" type="Label" parent="CanvasLayer/UI" unique_id=1611995490]
+layout_mode = 0
+offset_left = 11.0
+offset_top = 10.0
+offset_right = 373.0
+offset_bottom = 830.0
+theme_override_constants/line_spacing = 1
+theme_override_font_sizes/font_size = 15
+
+[node name="HeatmapSelector" type="OptionButton" parent="CanvasLayer/UI" unique_id=1589261825]
+layout_mode = 0
+offset_left = 1383.0
+offset_top = 447.0
+offset_right = 1423.0
+offset_bottom = 467.0
+
+[node name="ResetBrainButton" type="Button" parent="CanvasLayer/UI" unique_id=1589906664]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+layout_mode = 0
+offset_left = 1454.0
+offset_top = 739.0
+offset_right = 1594.0
+offset_bottom = 781.0
+theme_override_font_sizes/font_size = 24
+text = "Reset Brain"
+
+[node name="LoadBrainButton" type="Button" parent="CanvasLayer/UI" unique_id=645856953]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+layout_mode = 0
+offset_left = 1454.0
+offset_top = 794.0
+offset_right = 1587.0
+offset_bottom = 836.0
+theme_override_font_sizes/font_size = 24
+text = "Load Brain"
+
+[node name="Play" type="Button" parent="CanvasLayer/UI" unique_id=1279816438]
+modulate = Color(0.49411765, 1, 0, 1)
+layout_mode = 0
+offset_left = 1452.0
+offset_top = 13.0
+offset_right = 1554.0
+offset_bottom = 55.0
+theme_override_font_sizes/font_size = 24
+text = "Play"
+
+[node name="NextIteration" type="Button" parent="CanvasLayer/UI" unique_id=317229862]
+modulate = Color(0.49411765, 1, 0, 1)
+layout_mode = 0
+offset_left = 1452.0
+offset_top = 67.0
+offset_right = 1622.0
+offset_bottom = 109.0
+theme_override_font_sizes/font_size = 24
+text = "Next Iteration"
+
+[node name="FireInput" type="Button" parent="CanvasLayer/UI" unique_id=1305053933]
+modulate = Color(0.49411765, 1, 0, 1)
+layout_mode = 0
+offset_left = 1452.0
+offset_top = 156.0
+offset_right = 1612.0
+offset_bottom = 198.0
+theme_override_font_sizes/font_size = 24
+text = "Fire Input"
+
+[node name="FireInputStrength" type="HSlider" parent="CanvasLayer/UI" unique_id=1178544600]
+modulate = Color(0, 1, 0.105882354, 1)
+layout_mode = 0
+offset_left = 1452.0
+offset_top = 212.0
+offset_right = 1577.0
+offset_bottom = 228.0
+tooltip_text = "Fire Input Strength"
+min_value = 0.01
+max_value = 1.0
+step = 0.01
+value = 1.0
+
+[node name="Label" type="Label" parent="CanvasLayer/UI/FireInputStrength" unique_id=1517210658]
+layout_mode = 0
+offset_left = 141.0
+offset_top = -2.0
+offset_right = 181.0
+offset_bottom = 21.0
+
+[node name="FireInputOptionButton" type="OptionButton" parent="CanvasLayer/UI" unique_id=954506979]
+layout_mode = 0
+offset_left = 1453.0
+offset_top = 243.0
+offset_right = 1493.0
+offset_bottom = 263.0
+
+[node name="FireRandom" type="Button" parent="CanvasLayer/UI" unique_id=1254825369]
+modulate = Color(0.49411765, 1, 0, 1)
+layout_mode = 0
+offset_left = 1452.0
+offset_top = 316.0
+offset_right = 1612.0
+offset_bottom = 358.0
+theme_override_font_sizes/font_size = 24
+text = "Fire Random"
+
+[node name="FireRandomDelay" type="HSlider" parent="CanvasLayer/UI" unique_id=1355424508]
+modulate = Color(0, 1, 0.105882354, 1)
+layout_mode = 0
+offset_left = 1452.0
+offset_top = 372.0
+offset_right = 1577.0
+offset_bottom = 388.0
+tooltip_text = "Fire Input Delay (seconds)"
+min_value = 0.01
+max_value = 2.0
+step = 0.01
+value = 2.0
+
+[node name="Label" type="Label" parent="CanvasLayer/UI/FireRandomDelay" unique_id=672531721]
+layout_mode = 0
+offset_left = 141.0
+offset_top = -2.0
+offset_right = 181.0
+offset_bottom = 21.0

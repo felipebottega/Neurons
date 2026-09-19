@@ -1,0 +1,142 @@
+[gd_scene format=3 uid="uid://cltoy1rrm1g84"]
+
+[ext_resource type="Script" uid="uid://4v41vxl72si2" path="res://scripts/brain_diff.gd" id="1_miv42"]
+[ext_resource type="Script" uid="uid://ddc47eswjmgt1" path="res://scripts/histogram.gd" id="3_r0x27"]
+[ext_resource type="Script" uid="uid://cwyfb7ye11myc" path="res://scripts/heatmap.gd" id="4_cumgd"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_7ag8p"]
+bg_color = Color(0, 0, 0, 1)
+
+[sub_resource type="Theme" id="Theme_tter1"]
+TooltipPanel/styles/panel = SubResource("StyleBoxFlat_7ag8p")
+
+[node name="BrainDiff" type="Node2D" unique_id=1422867934]
+script = ExtResource("1_miv42")
+metadata/_edit_vertical_guides_ = [905.0, 823.0, 1067.0, 374.0, 538.0]
+metadata/_edit_horizontal_guides_ = [226.0, 780.0]
+
+[node name="Label" type="RichTextLabel" parent="." unique_id=192681714]
+offset_left = 1314.0
+offset_top = 5.0
+offset_right = 1630.0
+offset_bottom = 618.0
+text = "Genetic Parameters"
+
+[node name="ComputeDiff" type="Button" parent="." unique_id=1894957734]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1316.0
+offset_top = 678.0
+offset_right = 1478.0
+offset_bottom = 720.0
+theme_override_font_sizes/font_size = 24
+text = "Compute Diff"
+
+[node name="LoadBrain1" type="Button" parent="." unique_id=1252262134]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1316.0
+offset_top = 733.0
+offset_right = 1478.0
+offset_bottom = 775.0
+theme_override_font_sizes/font_size = 24
+text = "Load Brain 1"
+
+[node name="LoadBrain2" type="Button" parent="." unique_id=950212516]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1316.0
+offset_top = 788.0
+offset_right = 1478.0
+offset_bottom = 830.0
+theme_override_font_sizes/font_size = 24
+text = "Load Brain 2"
+
+[node name="HistogramLabel" type="Label" parent="." unique_id=1309515346]
+offset_left = 745.0
+offset_top = 96.0
+offset_right = 932.0
+offset_bottom = 119.0
+theme_override_colors/font_color = Color(0.8862745, 0.15686275, 0.15686275, 1)
+text = "Parameters Distribution"
+
+[node name="HistogramSliceSelector" type="OptionButton" parent="." unique_id=2021555723]
+offset_left = 704.0
+offset_top = 303.0
+offset_right = 744.0
+offset_bottom = 323.0
+
+[node name="HistogramParameterSelector" type="OptionButton" parent="." unique_id=843893943]
+offset_left = 828.0
+offset_top = 303.0
+offset_right = 868.0
+offset_bottom = 323.0
+
+[node name="Histogram" type="Control" parent="." unique_id=1739670667]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 731.0
+offset_top = 133.0
+offset_right = 991.0
+offset_bottom = 295.0
+script = ExtResource("3_r0x27")
+
+[node name="HeatmapLabel" type="Label" parent="." unique_id=7882269]
+offset_left = 762.0
+offset_top = 408.0
+offset_right = 931.0
+offset_bottom = 431.0
+tooltip_text = "Activation threshold: 0 means the neuron is easiest to activate, while 1 means it is 
+hardest. Input neurons are always assigned a threshold of 0, so differences may 
+appear even when the activation-threshold genes are identical.
+
+Decay factor: Lower values correspond to slower decay of neuronal 
+activity, while higher values correspond to faster decay.
+
+Memory factor: 0 means previous neuronal activity has no persistence, 
+while 1 means past activity has the strongest influence on the current state.
+
+Hebbian plasticity rate: 0 means no Hebbian weight adaptation, while higher 
+values mean stronger synaptic modification driven by correlated neuronal 
+activity.
+
+Polarity factor: -1 represents an inhibitory neuron and +1 represents an 
+excitatory neuron.
+
+Connection energy: Values range from -1 to +1 and represent the genetically 
+generated spatial connection field. Lower values correspond to regions less 
+favored by the connection gene, while higher values correspond to regions 
+more strongly favored.
+
+Neuron role: -1 represents an input neuron, 0 represents an internal neuron, and 
++1 represents an output neuron.
+
+Incoming connections: The value is the number of connections received by each 
+neuron. The displayed range goes from the minimum to the maximum incoming 
+degree found in the entire brain.
+
+For every parameter, the color scale is global across the whole brain. Therefore, 
+the same color always represents the same value in every slice."
+mouse_filter = 1
+theme = SubResource("Theme_tter1")
+theme_override_colors/font_color = Color(0.8862745, 0.15686275, 0.15686275, 1)
+theme_override_font_sizes/font_size = 16
+text = "Parameters Heatmap"
+
+[node name="HeatmapSliceSelector" type="OptionButton" parent="." unique_id=1030159101]
+offset_left = 704.0
+offset_top = 731.0
+offset_right = 744.0
+offset_bottom = 751.0
+
+[node name="HeatmapParameterSelector" type="OptionButton" parent="." unique_id=1879581309]
+offset_left = 828.0
+offset_top = 731.0
+offset_right = 868.0
+offset_bottom = 751.0
+
+[node name="Heatmap" type="Control" parent="." unique_id=108094167]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 712.0
+offset_top = 442.0
+offset_right = 987.0
+offset_bottom = 674.0
+script = ExtResource("4_cumgd")

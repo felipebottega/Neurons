@@ -1,0 +1,353 @@
+[gd_scene format=3 uid="uid://bxjjbcyfh7ogg"]
+
+[ext_resource type="Script" uid="uid://bq02vsc5vtdga" path="res://scripts/simulations/simulations.gd" id="1_q38lp"]
+[ext_resource type="Script" uid="uid://d0ykoa77ss016" path="res://scripts/heatmap.gd" id="2_qux5w"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_3lnjx"]
+bg_color = Color(0.06469653, 0.064696535, 0.06469648, 1)
+
+[sub_resource type="Theme" id="Theme_5bjn8"]
+TooltipPanel/styles/panel = SubResource("StyleBoxFlat_3lnjx")
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_5bjn8"]
+bg_color = Color(0.05197096, 0.051970966, 0.051970914, 1)
+
+[sub_resource type="Theme" id="Theme_qux5w"]
+TooltipPanel/styles/panel = SubResource("StyleBoxFlat_5bjn8")
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_7ag8p"]
+bg_color = Color(0, 0, 0, 1)
+
+[sub_resource type="Theme" id="Theme_sx4as"]
+TooltipPanel/styles/panel = SubResource("StyleBoxFlat_7ag8p")
+
+[node name="Simulations" type="Node2D" unique_id=1422867934]
+script = ExtResource("1_q38lp")
+metadata/_edit_horizontal_guides_ = [86.0, 620.0]
+metadata/_edit_vertical_guides_ = [260.0]
+
+[node name="LineEdit" type="LineEdit" parent="." unique_id=178173070]
+offset_left = 1304.0
+offset_top = 95.0
+offset_right = 1411.0
+offset_bottom = 126.0
+tooltip_text = "Dimension I"
+placeholder_text = "Dimension I"
+metadata/_edit_use_anchors_ = true
+
+[node name="LineEdit2" type="LineEdit" parent="." unique_id=846846651]
+offset_left = 1304.0
+offset_top = 130.0
+offset_right = 1414.0
+offset_bottom = 161.0
+placeholder_text = "Dimension J"
+metadata/_edit_use_anchors_ = true
+
+[node name="LineEdit3" type="LineEdit" parent="." unique_id=1511679268]
+offset_left = 1304.0
+offset_top = 166.0
+offset_right = 1414.0
+offset_bottom = 197.0
+placeholder_text = "Dimension K"
+metadata/_edit_use_anchors_ = true
+
+[node name="LineEdit4" type="LineEdit" parent="." unique_id=1751646441]
+offset_left = 1304.0
+offset_top = 204.0
+offset_right = 1461.0
+offset_bottom = 235.0
+placeholder_text = "Generation Time"
+metadata/_edit_use_anchors_ = true
+
+[node name="LineEdit5" type="LineEdit" parent="." unique_id=514459578]
+offset_left = 1304.0
+offset_top = 243.0
+offset_right = 1475.0
+offset_bottom = 274.0
+tooltip_text = "Mutation probability per digit. Must be between 0 and 1."
+placeholder_text = "Mutation Probability"
+
+[node name="Speed" type="OptionButton" parent="." unique_id=2071458667]
+offset_left = 1389.0
+offset_top = 287.0
+offset_right = 1457.0
+offset_bottom = 318.0
+tooltip_text = "Mutation probability per digit. Must be between 0 and 1."
+selected = 0
+item_count = 6
+popup/item_0/text = "1x"
+popup/item_0/id = 0
+popup/item_1/text = "2x"
+popup/item_1/id = 1
+popup/item_2/text = "4x"
+popup/item_2/id = 2
+popup/item_3/text = "8x"
+popup/item_3/id = 3
+popup/item_4/text = "16x"
+popup/item_4/id = 4
+popup/item_5/text = "32x"
+popup/item_5/id = 5
+
+[node name="SpeedLabel" type="Label" parent="." unique_id=696370801]
+offset_left = 1305.0
+offset_top = 287.0
+offset_right = 1378.0
+offset_bottom = 318.0
+theme_override_font_sizes/font_size = 22
+text = "Speed"
+
+[node name="SimulationSelect" type="OptionButton" parent="." unique_id=470317920]
+offset_left = 1445.0
+offset_top = 338.0
+offset_right = 1513.0
+offset_bottom = 369.0
+tooltip_text = "Mutation probability per digit. Must be between 0 and 1."
+selected = 0
+item_count = 4
+popup/item_0/text = "1"
+popup/item_0/id = 0
+popup/item_1/text = "2"
+popup/item_1/id = 1
+popup/item_2/text = "3"
+popup/item_2/id = 2
+popup/item_3/text = "4"
+popup/item_3/id = 3
+
+[node name="SimulationLabel" type="Label" parent="." unique_id=1138616487]
+offset_left = 1305.0
+offset_top = 338.0
+offset_right = 1419.0
+offset_bottom = 369.0
+theme_override_font_sizes/font_size = 22
+text = "Simulation"
+
+[node name="Label" type="Label" parent="." unique_id=1771166034]
+offset_left = 1302.0
+offset_top = 61.0
+offset_right = 1520.0
+offset_bottom = 92.0
+theme_override_font_sizes/font_size = 22
+text = "External Parameters"
+metadata/_edit_use_anchors_ = true
+
+[node name="Start" type="Button" parent="." unique_id=1894957734]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1301.0
+offset_top = 401.0
+offset_right = 1454.0
+offset_bottom = 443.0
+theme_override_font_sizes/font_size = 24
+text = "Start"
+metadata/_edit_use_anchors_ = true
+
+[node name="Pause" type="Button" parent="." unique_id=1252262134]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1509.0
+offset_top = 401.0
+offset_right = 1641.0
+offset_bottom = 443.0
+theme_override_font_sizes/font_size = 24
+text = "Pause"
+metadata/_edit_use_anchors_ = true
+
+[node name="Save" type="Button" parent="." unique_id=825599750]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1301.0
+offset_top = 455.0
+offset_right = 1454.0
+offset_bottom = 497.0
+theme_override_font_sizes/font_size = 24
+text = "Save"
+metadata/_edit_use_anchors_ = true
+
+[node name="FreeMode" type="Button" parent="." unique_id=1611196595]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1301.0
+offset_top = 510.0
+offset_right = 1454.0
+offset_bottom = 552.0
+theme_override_font_sizes/font_size = 24
+text = "Free Mode"
+metadata/_edit_use_anchors_ = true
+
+[node name="Load" type="Button" parent="." unique_id=1107466970]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1509.0
+offset_top = 455.0
+offset_right = 1641.0
+offset_bottom = 497.0
+theme_override_font_sizes/font_size = 24
+text = "Load"
+metadata/_edit_use_anchors_ = true
+
+[node name="SaveBrain" type="Button" parent="." unique_id=1262852370]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1509.0
+offset_top = 510.0
+offset_right = 1641.0
+offset_bottom = 552.0
+theme_override_font_sizes/font_size = 24
+text = "Save Brain"
+metadata/_edit_use_anchors_ = true
+
+[node name="Summary" type="Label" parent="." unique_id=393369027]
+offset_left = 17.0
+offset_top = 3.0
+offset_right = 360.0
+offset_bottom = 597.0
+theme_override_constants/line_spacing = 1
+theme_override_font_sizes/font_size = 15
+
+[node name="AgentInfo" type="Label" parent="." unique_id=773878548]
+offset_left = 1271.0
+offset_top = 579.0
+offset_right = 1431.0
+offset_bottom = 873.0
+theme_override_font_sizes/font_size = 14
+
+[node name="AgentInfo2" type="Label" parent="." unique_id=1468845094]
+offset_left = 1468.0
+offset_top = 579.0
+offset_right = 1635.0
+offset_bottom = 873.0
+theme_override_font_sizes/font_size = 14
+
+[node name="AgentInfo3" type="Label" parent="." unique_id=2034570903]
+offset_left = 1610.0
+offset_top = 579.0
+offset_right = 1737.0
+offset_bottom = 873.0
+theme_override_font_sizes/font_size = 14
+
+[node name="SimulationSpace" type="Node2D" parent="." unique_id=1010751342]
+position = Vector2(594, 11)
+
+[node name="OptionButton" type="OptionButton" parent="." unique_id=1237191194]
+z_index = 10
+offset_left = 1079.0
+offset_top = 691.0
+offset_right = 1237.0
+offset_bottom = 722.0
+tooltip_text = "Fitness evolution across generations.
+
+Mean fitness is the arithmetic mean of the fitness values of all agents
+in a generation.
+
+Best fitness is the highest individual fitness obtained in that
+generation.
+
+Higher values indicate better overall performance under the current
+simulation's fitness function."
+theme = SubResource("Theme_5bjn8")
+
+[node name="OptionButton2" type="OptionButton" parent="." unique_id=525999736]
+z_index = 10
+offset_left = 1079.0
+offset_top = 842.0
+offset_right = 1237.0
+offset_bottom = 873.0
+tooltip_text = "Genetic diversity is the mean normalized Hamming distance between all
+pairs of genomes in the population.
+
+For genomes g_i and g_j of length L, their normalized Hamming distance is
+
+d(g_i,g_j) = (1/L) * sum_k [g_i(k) != g_j(k)].
+
+The population diversity is the mean of d(g_i,g_j) over all unordered
+pairs of agents.
+
+A value of 0 means all genomes are identical. A value of 1 means every
+compared pair differs at every gene position.
+
+For the complete genome used here, L = 568 gene digits.
+
+Diversity      Mean differing gene digits per pair
+1                  568       (all gene digits different)
+1e-1           56.8
+1e-2           5.68
+1e-3           0.568
+0                  0         (all genomes identical)
+
+The values are pairwise averages, so the number of differing digits
+does not need to be an integer."
+mouse_filter = 1
+theme = SubResource("Theme_qux5w")
+
+[node name="Title2" type="Label" parent="." unique_id=1660812460]
+offset_left = 35.0
+offset_top = 547.0
+offset_right = 360.0
+offset_bottom = 581.0
+tooltip_text = "This heatmap shows the relation between  
+two selected genes and agent fitness.
+
+Each axis represents one selected gene. 
+Gene values are ordered using a
+quaternary Gray code. Nearby positions 
+therefore tend to represent small genetic 
+changes.
+
+Each cell contains the mean fitness
+of all agents that fell into that bin.
+Data from all generations in the
+current simulation are accumulated.
+
+The color scale is fixed from -1 to 1.
+Bright pink cells have no samples yet.
+
+Changing either gene selector rebuilds
+the heatmap from the stored history.
+"
+mouse_filter = 1
+theme = SubResource("Theme_sx4as")
+theme_override_colors/font_color = Color(0.8862745, 0.15686275, 0.15686275, 1)
+theme_override_font_sizes/font_size = 18
+text = "Genetic x Fitness Landscape"
+
+[node name="Heatmap" type="Control" parent="." unique_id=1915224881]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 3.0
+offset_top = 581.0
+offset_right = 268.0
+offset_bottom = 828.0
+script = ExtResource("2_qux5w")
+
+[node name="GeneX" type="OptionButton" parent="." unique_id=40436449]
+offset_left = 279.0
+offset_top = 614.0
+offset_right = 319.0
+offset_bottom = 634.0
+
+[node name="Label" type="Label" parent="GeneX" unique_id=1250760603]
+layout_mode = 0
+offset_top = -34.0
+offset_right = 40.0
+theme_override_font_sizes/font_size = 24
+text = "X: "
+
+[node name="GeneY" type="OptionButton" parent="." unique_id=2141861642]
+offset_left = 279.0
+offset_top = 698.0
+offset_right = 319.0
+offset_bottom = 718.0
+
+[node name="Label" type="Label" parent="GeneY" unique_id=1394442660]
+layout_mode = 0
+offset_top = -34.0
+offset_right = 40.0
+theme_override_font_sizes/font_size = 24
+text = "Y:"
+
+[node name="Resolution" type="OptionButton" parent="." unique_id=1320946516]
+offset_left = 279.0
+offset_top = 782.0
+offset_right = 319.0
+offset_bottom = 802.0
+
+[node name="Label" type="Label" parent="Resolution" unique_id=714732354]
+layout_mode = 0
+offset_top = -34.0
+offset_right = 40.0
+theme_override_font_sizes/font_size = 24
+text = "Resolution:"

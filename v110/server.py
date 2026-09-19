@@ -268,7 +268,7 @@ def gen_brain():
                         # Verifica se não é conexão repetida.
                         if neuron2 not in gens_num['connections'][idx]:
                             # Verifica se já não há uma conexão na direção contrária.
-                            if (neuron2 not in gens_num['connections']) or (idx not in gens_num['connections'][neuron2 ]):
+                            if (neuron2 not in gens_num['connections']) or (idx not in gens_num['connections'][neuron2]):
                                 # Verifica se o neurônio candidato está dentro da região permitida.
                                 radius_x, radius_y, radius_z = gens_num['regions'][idx]
                                 if i - radius_x <= neuron_x <= i + radius_x:

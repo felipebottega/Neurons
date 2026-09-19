@@ -1,0 +1,318 @@
+[gd_scene format=3 uid="uid://3gppy1pbwtrv"]
+
+[ext_resource type="Script" uid="uid://c7yy3hs5l3wnp" path="res://scripts/brain_explorer.gd" id="1_4aoyb"]
+[ext_resource type="Texture2D" uid="uid://dl55b38604otl" path="res://assets/dice.png" id="2_wwy2i"]
+[ext_resource type="Script" uid="uid://ddc47eswjmgt1" path="res://scripts/histogram.gd" id="3_8wek4"]
+[ext_resource type="Script" uid="uid://cwyfb7ye11myc" path="res://scripts/heatmap.gd" id="4_dridg"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_wwy2i"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_7ag8p"]
+bg_color = Color(0, 0, 0, 1)
+
+[sub_resource type="Theme" id="Theme_dridg"]
+TooltipPanel/styles/panel = SubResource("StyleBoxFlat_7ag8p")
+
+[node name="BrainExplorer" type="Node2D" unique_id=1422867934]
+script = ExtResource("1_4aoyb")
+metadata/_edit_vertical_guides_ = [904.0, 823.0, 566.0]
+
+[node name="LineEdit" type="LineEdit" parent="." unique_id=178173070]
+offset_left = 1283.0
+offset_top = 27.0
+offset_right = 1390.0
+offset_bottom = 58.0
+tooltip_text = "Dimension I"
+placeholder_text = "Dimension I"
+
+[node name="LineEdit2" type="LineEdit" parent="." unique_id=846846651]
+offset_left = 1283.0
+offset_top = 61.0
+offset_right = 1393.0
+offset_bottom = 92.0
+placeholder_text = "Dimension J"
+
+[node name="LineEdit3" type="LineEdit" parent="." unique_id=1511679268]
+offset_left = 1283.0
+offset_top = 95.0
+offset_right = 1393.0
+offset_bottom = 126.0
+placeholder_text = "Dimension K"
+
+[node name="LineEdit4" type="LineEdit" parent="." unique_id=482745513]
+offset_left = 1283.0
+offset_top = 129.0
+offset_right = 1436.0
+offset_bottom = 160.0
+placeholder_text = "Number of Inputs"
+
+[node name="LineEdit5" type="LineEdit" parent="." unique_id=1765873256]
+offset_left = 1283.0
+offset_top = 163.0
+offset_right = 1440.0
+offset_bottom = 194.0
+placeholder_text = "Number of Outputs"
+
+[node name="LineEdit6" type="LineEdit" parent="." unique_id=1126541313]
+offset_left = 1283.0
+offset_top = 226.0
+offset_right = 1567.0
+offset_bottom = 257.0
+placeholder_text = "Maximum Number of Connections"
+
+[node name="LineEdit7" type="LineEdit" parent="." unique_id=700931530]
+offset_left = 1283.0
+offset_top = 260.0
+offset_right = 1500.0
+offset_bottom = 291.0
+placeholder_text = "Initial Connections Energy"
+
+[node name="LineEdit8" type="LineEdit" parent="." unique_id=17725267]
+offset_left = 1283.0
+offset_top = 295.0
+offset_right = 1462.0
+offset_bottom = 326.0
+placeholder_text = "Activation threshold"
+
+[node name="LineEdit9" type="LineEdit" parent="." unique_id=554748284]
+offset_left = 1283.0
+offset_top = 329.0
+offset_right = 1447.0
+offset_bottom = 360.0
+placeholder_text = "Exponential factor"
+
+[node name="LineEdit10" type="LineEdit" parent="." unique_id=956269847]
+offset_left = 1283.0
+offset_top = 363.0
+offset_right = 1405.0
+offset_bottom = 394.0
+placeholder_text = "Decay factor"
+
+[node name="LineEdit11" type="LineEdit" parent="." unique_id=763987486]
+offset_left = 1283.0
+offset_top = 397.0
+offset_right = 1426.0
+offset_bottom = 428.0
+placeholder_text = "Retention factor"
+
+[node name="LineEdit12" type="LineEdit" parent="." unique_id=1429208157]
+offset_left = 1283.0
+offset_top = 431.0
+offset_right = 1405.0
+offset_bottom = 462.0
+placeholder_text = "Polarity factor"
+
+[node name="LineEdit13" type="LineEdit" parent="." unique_id=225802912]
+offset_left = 1283.0
+offset_top = 465.0
+offset_right = 1472.0
+offset_bottom = 496.0
+placeholder_text = "Hebbian plasticity rate"
+
+[node name="LineEdit14" type="LineEdit" parent="." unique_id=487423978]
+offset_left = 1283.0
+offset_top = 498.0
+offset_right = 1461.0
+offset_bottom = 529.0
+placeholder_text = "Structural plasticity"
+
+[node name="LineEdit15" type="LineEdit" parent="." unique_id=338475043]
+offset_left = 1283.0
+offset_top = 531.0
+offset_right = 1351.5
+offset_bottom = 562.0
+placeholder_text = "Beta"
+
+[node name="LineEdit16" type="LineEdit" parent="." unique_id=2131294001]
+offset_left = 1283.0
+offset_top = 564.0
+offset_right = 1509.0
+offset_bottom = 595.0
+placeholder_text = "Modulatory Release Factor"
+
+[node name="LineEdit17" type="LineEdit" parent="." unique_id=141410651]
+offset_left = 1283.0
+offset_top = 597.0
+offset_right = 1475.0
+offset_bottom = 628.0
+placeholder_text = "Modulatory Sensitivity"
+
+[node name="LineEdit18" type="LineEdit" parent="." unique_id=517708423]
+offset_left = 1283.0
+offset_top = 630.0
+offset_right = 1469.0
+offset_bottom = 661.0
+placeholder_text = "Modulatory Dynamics"
+
+[node name="LineEdit19" type="LineEdit" parent="." unique_id=560920653]
+offset_left = 1283.0
+offset_top = 663.0
+offset_right = 1446.0
+offset_bottom = 694.0
+placeholder_text = "Maximum Fadigue"
+
+[node name="LineEdit20" type="LineEdit" parent="." unique_id=1634106708]
+offset_left = 1283.0
+offset_top = 696.0
+offset_right = 1421.0
+offset_bottom = 727.0
+placeholder_text = "Input Influence"
+
+[node name="Label" type="Label" parent="." unique_id=1771166034]
+offset_left = 1281.0
+offset_top = -3.0
+offset_right = 1499.0
+offset_bottom = 28.0
+theme_override_font_sizes/font_size = 22
+text = "External Parameters"
+
+[node name="Label2" type="Label" parent="." unique_id=2048613559]
+offset_left = 1281.0
+offset_top = 195.0
+offset_right = 1499.0
+offset_bottom = 226.0
+theme_override_font_sizes/font_size = 22
+text = "Genetic Parameters"
+
+[node name="Button" type="Button" parent="." unique_id=1251586137]
+offset_left = 1398.0
+offset_top = 41.0
+offset_right = 1432.0
+offset_bottom = 77.0
+theme_override_styles/normal = SubResource("StyleBoxEmpty_wwy2i")
+icon = ExtResource("2_wwy2i")
+
+[node name="GenerateBrain" type="Button" parent="." unique_id=1894957734]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1283.0
+offset_top = 742.0
+offset_right = 1467.0
+offset_bottom = 784.0
+theme_override_font_sizes/font_size = 24
+text = "Generate Brain"
+
+[node name="SaveBrain" type="Button" parent="." unique_id=1252262134]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1478.0
+offset_top = 742.0
+offset_right = 1608.0
+offset_bottom = 784.0
+theme_override_font_sizes/font_size = 24
+text = "Save Brain"
+
+[node name="LoadBrain" type="Button" parent="." unique_id=950212516]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1478.0
+offset_top = 791.0
+offset_right = 1611.0
+offset_bottom = 833.0
+theme_override_font_sizes/font_size = 24
+text = "Load Brain"
+
+[node name="RandomizeGenome" type="Button" parent="." unique_id=1380463903]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1226.0
+offset_top = 791.0
+offset_right = 1467.0
+offset_bottom = 833.0
+theme_override_font_sizes/font_size = 24
+text = "Randomize Genome"
+
+[node name="HistogramLabel" type="Label" parent="." unique_id=1139770283]
+offset_left = 614.0
+offset_top = 98.0
+offset_right = 801.0
+offset_bottom = 121.0
+theme_override_colors/font_color = Color(0.8862745, 0.15686275, 0.15686275, 1)
+text = "Parameters Distribution"
+
+[node name="HistogramSliceSelector" type="OptionButton" parent="." unique_id=1704821597]
+offset_left = 573.0
+offset_top = 305.0
+offset_right = 613.0
+offset_bottom = 325.0
+
+[node name="HistogramParameterSelector" type="OptionButton" parent="." unique_id=383628115]
+offset_left = 697.0
+offset_top = 305.0
+offset_right = 737.0
+offset_bottom = 325.0
+
+[node name="Histogram" type="Control" parent="." unique_id=2022402105]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 600.0
+offset_top = 135.0
+offset_right = 860.0
+offset_bottom = 297.0
+script = ExtResource("3_8wek4")
+
+[node name="HeatmapLabel" type="Label" parent="." unique_id=1210123369]
+offset_left = 631.0
+offset_top = 410.0
+offset_right = 800.0
+offset_bottom = 433.0
+tooltip_text = "Activation threshold: 0 means the neuron is easiest to activate, while 1 means it is 
+hardest. Input neurons are always assigned a threshold of 0, so differences may 
+appear even when the activation-threshold genes are identical.
+
+Decay factor: Lower values correspond to slower decay of neuronal 
+activity, while higher values correspond to faster decay.
+
+Memory factor: 0 means previous neuronal activity has no persistence, 
+while 1 means past activity has the strongest influence on the current state.
+
+Hebbian plasticity rate: 0 means no Hebbian weight adaptation, while higher 
+values mean stronger synaptic modification driven by correlated neuronal 
+activity.
+
+Polarity factor: -1 represents an inhibitory neuron and +1 represents an 
+excitatory neuron.
+
+Connection energy: Values range from -1 to +1 and represent the genetically 
+generated spatial connection field. Lower values correspond to regions less 
+favored by the connection gene, while higher values correspond to regions 
+more strongly favored.
+
+Neuron role: -1 represents an input neuron, 0 represents an internal neuron, and 
++1 represents an output neuron.
+
+Incoming connections: The value is the number of connections received by each 
+neuron. The displayed range goes from the minimum to the maximum incoming 
+degree found in the entire brain.
+
+For every parameter, the color scale is global across the whole brain. Therefore, 
+the same color always represents the same value in every slice."
+mouse_filter = 1
+theme = SubResource("Theme_dridg")
+theme_override_colors/font_color = Color(0.8862745, 0.15686275, 0.15686275, 1)
+theme_override_font_sizes/font_size = 16
+text = "Parameters Heatmap"
+
+[node name="HeatmapSliceSelector" type="OptionButton" parent="." unique_id=1663351449]
+offset_left = 573.0
+offset_top = 733.0
+offset_right = 613.0
+offset_bottom = 753.0
+
+[node name="HeatmapParameterSelector" type="OptionButton" parent="." unique_id=322569597]
+offset_left = 697.0
+offset_top = 733.0
+offset_right = 737.0
+offset_bottom = 753.0
+
+[node name="Heatmap" type="Control" parent="." unique_id=1120564679]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 609.0
+offset_top = 444.0
+offset_right = 884.0
+offset_bottom = 676.0
+script = ExtResource("4_dridg")
+
+[node name="BrainInfoLabel" type="Label" parent="." unique_id=393369027]
+offset_left = 30.0
+offset_top = 50.0
+offset_right = 373.0
+offset_bottom = 829.0
+theme_override_font_sizes/font_size = 15
