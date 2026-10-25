@@ -36,6 +36,8 @@ Ref<GenomeNative> OffspringNative::generate(
 		return Ref<GenomeNative>();
 	}
 
+	const float mutation_probability_f32 = static_cast<float>(mutation_probability);
+
 	Ref<GenomeNative> child;
 	child.instantiate();
 
@@ -55,21 +57,21 @@ Ref<GenomeNative> OffspringNative::generate(
 	_crossover_gene(parent_a->structural_plasticity, parent_b->structural_plasticity, child->structural_plasticity);
 	_crossover_gene(parent_a->input_influence, parent_b->input_influence, child->input_influence);
 
-	_mutate_gene(child->max_connections, mutation_probability);
-	_mutate_gene(child->beta, mutation_probability);
-	_mutate_gene(child->connections, mutation_probability);
-	_mutate_gene(child->activation_threshold, mutation_probability);
-	_mutate_gene(child->refractory_strength, mutation_probability);
-	_mutate_gene(child->exponential_factor, mutation_probability);
-	_mutate_gene(child->decay_factor, mutation_probability);
-	_mutate_gene(child->retention_factor, mutation_probability);
-	_mutate_gene(child->polarity_factor, mutation_probability);
-	_mutate_gene(child->hebbian_plasticity_rate, mutation_probability);
-	_mutate_gene(child->modulatory_release_factor, mutation_probability);
-	_mutate_gene(child->modulatory_sensitivity, mutation_probability);
-	_mutate_gene(child->modulatory_dynamics, mutation_probability);
-	_mutate_gene(child->structural_plasticity, mutation_probability);
-	_mutate_gene(child->input_influence, mutation_probability);
+	_mutate_gene(child->max_connections, mutation_probability_f32);
+	_mutate_gene(child->beta, mutation_probability_f32);
+	_mutate_gene(child->connections, mutation_probability_f32);
+	_mutate_gene(child->activation_threshold, mutation_probability_f32);
+	_mutate_gene(child->refractory_strength, mutation_probability_f32);
+	_mutate_gene(child->exponential_factor, mutation_probability_f32);
+	_mutate_gene(child->decay_factor, mutation_probability_f32);
+	_mutate_gene(child->retention_factor, mutation_probability_f32);
+	_mutate_gene(child->polarity_factor, mutation_probability_f32);
+	_mutate_gene(child->hebbian_plasticity_rate, mutation_probability_f32);
+	_mutate_gene(child->modulatory_release_factor, mutation_probability_f32);
+	_mutate_gene(child->modulatory_sensitivity, mutation_probability_f32);
+	_mutate_gene(child->modulatory_dynamics, mutation_probability_f32);
+	_mutate_gene(child->structural_plasticity, mutation_probability_f32);
+	_mutate_gene(child->input_influence, mutation_probability_f32);
 
 	return child;
 }
@@ -120,8 +122,8 @@ void OffspringNative::_crossover_gene(
 	}
 }
 
-void OffspringNative::_mutate_gene(std::vector<int32_t> &gene, double mutation_probability) {
-	std::uniform_real_distribution<double> mutation_distribution(0.0, 1.0);
+void OffspringNative::_mutate_gene(std::vector<int32_t> &gene, float mutation_probability) {
+	std::uniform_real_distribution<float> mutation_distribution(0.0f, 1.0f);
 	std::uniform_int_distribution<int32_t> digit_distribution(0, 3);
 
 	for (int32_t &digit : gene) {

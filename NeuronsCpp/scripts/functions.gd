@@ -69,10 +69,16 @@ func H_coefficients(x: Array) -> Vector4:
 			2: coefficients.z += weight
 			3: coefficients.w += weight
 
-	return coefficients * (3.0 * PI / (4.0 * C))
+	return coefficients * (4.0 / C)
 
 func H(A_ijk: float, A_uvw: float, coefficients: Vector4) -> float:
-	return sin(PI/16.0 + coefficients.x * cos(A_ijk) * sin(A_uvw) + coefficients.y * cos(2.0 * A_ijk) * sin(2.0 * A_uvw) + coefficients.z * cos(3.0 * A_ijk) * sin(3.0 * A_uvw) + coefficients.w * cos(4.0 * A_ijk) * sin(4.0 * A_uvw))
+	return sin(
+		3.0 * PI / 8.0
+		+ coefficients.x * (sin(A_ijk) + cos(A_uvw))
+		+ coefficients.y * (sin(2.0 * A_ijk) + cos(2.0 * A_uvw))
+		+ coefficients.z * (sin(3.0 * A_ijk) + cos(3.0 * A_uvw))
+		+ coefficients.w * (sin(4.0 * A_ijk) + cos(4.0 * A_uvw))
+	)
 
 func D(i: int, j: int, k: int, x: Array, I: int, J: int, K: int) -> float:
 	return 1.5 + A(i, j, k, x, I, J, K)

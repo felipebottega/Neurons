@@ -263,4 +263,5 @@ Its biological inspiration should not be interpreted as a claim of biological re
 ## Tips
 Command to compile GDExtension (at the root level of the Godot project): 
  - conda activate crypto
- - scons platform=windows target=template_debug api_version=4.7
+ - scons platform=windows target=template_debug api_version=4.7 (descontinued)
+ - scons platform=windows target=template_release api_version=4.7

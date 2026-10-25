@@ -471,31 +471,21 @@ func _update_compute_button() -> void:
 	load_brain_2_button.disabled = _is_generating()
 
 
-## Builds a Genome object from one saved configuration.
-func _genome_from_config(config: Dictionary) -> Genome:
-	var genome = Genome.new()
+## Builds the native genome from a saved configuration without modifying its genes.
+## GenomeNative has no public setters; OffspringNative validates and imports
+## the same arrays that were previously assigned to the GDScript Genome.
+func _genome_from_config(config: Dictionary) -> GenomeNative:
 	var data: Dictionary = config["genome"]
+	var gene_arrays: Dictionary = {}
 
-	genome.max_connections = _gene_from_text(data["max_connections"])
-	genome.connections = _gene_from_text(data["connections"])
-	genome.activation_threshold = _gene_from_text(data["activation_threshold"])
-	genome.refractory_strength = _gene_from_text(data["refractory_strength"])
-	genome.exponential_factor = _gene_from_text(data["exponential_factor"])
-	genome.decay_factor = _gene_from_text(data["decay_factor"])
-	genome.retention_factor = _gene_from_text(data["retention_factor"])
-	genome.polarity_factor = _gene_from_text(data["polarity_factor"])
-	genome.hebbian_plasticity_rate = _gene_from_text(data["hebbian_plasticity_rate"])
-	genome.modulatory_release_factor = _gene_from_text(data["modulatory_release_factor"])
-	genome.modulatory_sensitivity = _gene_from_text(data["modulatory_sensitivity"])
-	genome.modulatory_dynamics = _gene_from_text(data["modulatory_dynamics"])
-	genome.structural_plasticity = _gene_from_text(data["structural_plasticity"])
-	genome.input_influence = _gene_from_text(data["input_influence"])
-	genome.beta = _gene_from_text(data["beta"])
+	for gene_name in GENE_ORDER:
+		gene_arrays[gene_name] = _gene_from_text(data[gene_name])
 
-	return genome
+	var offspring: OffspringNative = OffspringNative.new()
+	return offspring.genome_from_dictionary(gene_arrays)
 
 
-## Converts a gene string into the integer array expected by Genome.
+## Converts a gene string into the integer array expected by the native genome factory.
 func _gene_from_text(text: String) -> Array[int]:
 	var gene: Array[int] = []
 
@@ -551,12 +541,17 @@ func _build_brains_thread() -> Dictionary:
 	)
 	var num_inputs := int(external["num_inputs"])
 	var num_outputs := int(external["num_outputs"])
-	var builder_1 = BrainBuilder.new()
-	var builder_2 = BrainBuilder.new()
+	var genome_1: GenomeNative = _genome_from_config(generation_config_1)
+	var genome_2: GenomeNative = _genome_from_config(generation_config_2)
+	if genome_1 == null or genome_2 == null:
+		return {"brain_1": {}, "brain_2": {}, "time_1": 0.0, "time_2": 0.0}
+
+	var builder_1: BrainBuilderNative = BrainBuilderNative.new()
+	var builder_2: BrainBuilderNative = BrainBuilderNative.new()
 
 	var start_1 := Time.get_ticks_msec()
 	var result_1: Dictionary = builder_1.build(
-		_genome_from_config(generation_config_1),
+		genome_1,
 		size,
 		num_inputs,
 		num_outputs,
@@ -569,7 +564,7 @@ func _build_brains_thread() -> Dictionary:
 
 	var start_2 := Time.get_ticks_msec()
 	var result_2: Dictionary = builder_2.build(
-		_genome_from_config(generation_config_2),
+		genome_2,
 		size,
 		num_inputs,
 		num_outputs,

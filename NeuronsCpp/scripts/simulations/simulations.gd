@@ -155,6 +155,7 @@ var profiling_print_interval_steps: int = 300
 @onready var heatmap_x_selector: OptionButton = $GeneX
 @onready var heatmap_y_selector: OptionButton = $GeneY
 @onready var heatmap_resolution_selector: OptionButton = $Resolution
+@onready var heatmap_tracking_button: Button = $HeatmapTracking
 
 
 var experiment_state: ExperimentState = ExperimentState.IDLE
@@ -236,6 +237,7 @@ var generation_heatmap_phenotypes: Array = []
 var phenotypic_heatmap_bin_sums: PackedFloat64Array = PackedFloat64Array()
 var phenotypic_heatmap_bin_counts: PackedInt32Array = PackedInt32Array()
 var heatmap_resolution: int = 30
+var heatmap_tracking_enabled: bool = true
 
 var target_test_index: int = 0
 var generation_fitness_sums: PackedFloat64Array = PackedFloat64Array()
@@ -291,6 +293,7 @@ func _ready() -> void:
 	heatmap_x_selector.item_selected.connect(_on_heatmap_axis_selected)
 	heatmap_y_selector.item_selected.connect(_on_heatmap_axis_selected)
 	heatmap_resolution_selector.item_selected.connect(_on_heatmap_resolution_selected)
+	heatmap_tracking_button.toggled.connect(_on_heatmap_tracking_toggled)
 	_reset_phenotypic_fitness_history()
 	heatmap.hide()
 
@@ -370,12 +373,28 @@ func _setup_heatmap_resolution_selector() -> void:
 
 
 func _on_heatmap_axis_selected(_index: int) -> void:
-	_rebuild_phenotypic_fitness_heatmap()
+	if heatmap_tracking_enabled:
+		_rebuild_phenotypic_fitness_heatmap()
 
 
 func _on_heatmap_resolution_selected(index: int) -> void:
+	if not heatmap_tracking_enabled:
+		return
 	heatmap_resolution = int(heatmap_resolution_selector.get_item_metadata(index))
 	_rebuild_phenotypic_fitness_heatmap()
+
+
+## Pauses or resumes phenotype collection without discarding previously recorded generations.
+func _on_heatmap_tracking_toggled(enabled: bool) -> void:
+	heatmap_tracking_enabled = enabled
+	heatmap_tracking_button.text = "ON" if enabled else "OFF"
+	heatmap_x_selector.disabled = not enabled
+	heatmap_y_selector.disabled = not enabled
+	heatmap_resolution_selector.disabled = not enabled
+
+	if not enabled:
+		# Never record a partially tracked generation after switching back ON.
+		generation_heatmap_phenotypes.clear()
 
 
 ## Clears the unsaved phenotype-fitness history and returns the heatmap to an empty state.
@@ -397,6 +416,8 @@ func _initialize_phenotypic_heatmap_bins() -> void:
 
 ## Captures only values fixed at brain generation, before lifetime dynamics begins.
 func _capture_generation_heatmap_phenotypes() -> void:
+	if not heatmap_tracking_enabled:
+		return
 	generation_heatmap_phenotypes.clear()
 
 	# Loaded brain snapshots may already contain lifetime changes in weights and
@@ -411,7 +432,7 @@ func _capture_generation_heatmap_phenotypes() -> void:
 
 ## Stores all phenotype-fitness pairs from the completed generation.
 func _record_phenotypic_fitness_generation() -> void:
-	if generation_heatmap_phenotypes.size() != AGENT_COUNT:
+	if not heatmap_tracking_enabled or generation_heatmap_phenotypes.size() != AGENT_COUNT:
 		return
 
 	for agent_index in AGENT_COUNT:
@@ -1739,14 +1760,14 @@ func _start_experiment_from_population(new_generation: bool = true) -> void:
 		elif simulation_selector.selected == 3:
 			simulation_4_target_speed = agent_speed * 0.1
 
-		_capture_generation_heatmap_phenotypes()
+		if heatmap_tracking_enabled:
+			_capture_generation_heatmap_phenotypes()
 
 	fitness_reset_behavior.call()
 
 	if new_generation or agent_dynamics.size() != AGENT_COUNT:
 		agent_dynamics.clear()
 		agent_dynamics.resize(AGENT_COUNT)
-
 		for agent_index in AGENT_COUNT:
 			var dynamics = BrainDynamicsNative.new()
 			dynamics.set_profiling_enabled(brain_profiling)
@@ -1780,7 +1801,6 @@ func _start_experiment_from_population(new_generation: bool = true) -> void:
 	_update_summary()
 	_refresh_buttons()
 	queue_redraw()
-
 
 func _reset_experiment_entities() -> void:
 	if target == null or agents.size() != AGENT_COUNT:
@@ -2506,7 +2526,8 @@ func _record_completed_generation() -> void:
 	evolution_mean_fitness_history.append(mean_fitness)
 	evolution_best_fitness_history.append(best_fitness)
 	genetic_diversity_history.append(_population_genetic_diversity())
-	_record_phenotypic_fitness_generation()
+	if heatmap_tracking_enabled:
+		_record_phenotypic_fitness_generation()
 	_rebuild_history_graph_caches()
 	_queue_history_graph_redraw()
 	queue_redraw()

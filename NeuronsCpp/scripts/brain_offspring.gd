@@ -134,7 +134,7 @@ const HEATMAP_PARAMETER_LABELS = [
 var config_1: Dictionary = {}
 var config_2: Dictionary = {}
 var current_brain: Dictionary = {}
-var current_offspring_genome: Genome
+var current_offspring_genome: GenomeNative
 
 var load_brain_1_default_modulate := Color.WHITE
 var load_brain_2_default_modulate := Color.WHITE
@@ -248,7 +248,7 @@ func _setup_save_genome_dialog() -> void:
 ## Configures the mutation probability field.
 func _setup_mutation_probability_field() -> void:
 	if mutation_probability_field.text.strip_edges().is_empty():
-		mutation_probability_field.text = str(Offspring.DEFAULT_MUTATION_PROBABILITY)
+		mutation_probability_field.text = "0.001"
 
 	mutation_probability_field.tooltip_text = "Mutation probability per digit. Must be between 0 and 1."
 
@@ -282,7 +282,7 @@ func _save_genome_to_file(path: String) -> void:
 	var genome_data := {}
 
 	for gene_name in GENE_ORDER:
-		var gene: Array[int] = current_offspring_genome.get(gene_name)
+		var gene: Array = current_offspring_genome.get_gene(gene_name)
 		genome_data[gene_name] = _gene_to_text(gene)
 
 	var data := {
@@ -329,9 +329,8 @@ func _load_brain_configuration(path: String) -> void:
 
 	current_brain.clear()
 
-	if current_offspring_genome != null:
-		current_offspring_genome.free()
-		current_offspring_genome = null
+	# GenomeNative is RefCounted; clearing the reference releases it automatically.
+	current_offspring_genome = null
 
 	_hide_analysis()
 	_update_genetic_parameters()
@@ -517,18 +516,19 @@ func _update_generate_button() -> void:
 	save_brain_button.disabled = current_offspring_genome == null or current_brain.is_empty() or not bool(current_brain.get("valid", false)) or generating
 
 
-## Builds a Genome object from one saved configuration.
-func _genome_from_config(config: Dictionary) -> Genome:
-	var genome = Genome.new()
+## Imports a saved genome into GenomeNative without changing its gene digits.
+func _genome_from_config(config: Dictionary) -> GenomeNative:
 	var data: Dictionary = config["genome"]
+	var gene_arrays: Dictionary = {}
 
 	for gene_name in GENE_ORDER:
-		genome.set(gene_name, _gene_from_text(data[gene_name]))
+		gene_arrays[gene_name] = _gene_from_text(data[gene_name])
 
-	return genome
+	var offspring: OffspringNative = OffspringNative.new()
+	return offspring.genome_from_dictionary(gene_arrays)
 
 
-## Converts a gene string into the integer array expected by Genome.
+## Converts a gene string into the integer array expected by the native genome importer.
 func _gene_from_text(text: String) -> Array[int]:
 	var gene: Array[int] = []
 
@@ -539,7 +539,7 @@ func _gene_from_text(text: String) -> Array[int]:
 
 
 ## Converts an integer gene array into the text format used by saved brain configurations.
-func _gene_to_text(gene: Array[int]) -> String:
+func _gene_to_text(gene: Array) -> String:
 	var text := ""
 
 	for digit in gene:
@@ -582,17 +582,20 @@ func _generate_offspring() -> void:
 	)
 	var num_inputs := int(external["num_inputs"])
 	var num_outputs := int(external["num_outputs"])
-	var parent_1 := _genome_from_config(config_1)
-	var parent_2 := _genome_from_config(config_2)
-	var offspring_generator := Offspring.new()
+	var parent_1: GenomeNative = _genome_from_config(config_1)
+	var parent_2: GenomeNative = _genome_from_config(config_2)
+	if parent_1 == null or parent_2 == null:
+		summary_label.text = "Could not import the parent genomes into GDExtension."
+		return
+
+	var offspring_generator: OffspringNative = OffspringNative.new()
 	var mutation_probability := float(mutation_probability_field.text)
+	var child: GenomeNative = offspring_generator.generate(parent_1, parent_2, mutation_probability)
+	if child == null:
+		summary_label.text = "Could not generate the native offspring genome."
+		return
 
-	if current_offspring_genome != null:
-		current_offspring_genome.free()
-
-	current_offspring_genome = offspring_generator.generate(parent_1, parent_2, mutation_probability)
-	parent_1.free()
-	parent_2.free()
+	current_offspring_genome = child
 	current_brain.clear()
 	generation_mutation_probability = mutation_probability
 
@@ -614,19 +617,18 @@ func _generate_offspring() -> void:
 
 	if error != OK:
 		generation_thread = null
-		current_offspring_genome.free()
 		current_offspring_genome = null
 		summary_label.text = "Could not start brain-generation thread. Error: %s" % error_string(error)
 		_update_generate_button()
 
 
 ## Worker-thread entry point. It must not access the scene tree or UI nodes.
-func _build_brain_thread(genome: Genome, size: Vector3i, num_inputs: int, num_outputs: int) -> Dictionary:
-	var builder = BrainBuilder.new()
+func _build_brain_thread(genome: GenomeNative, size: Vector3i, num_inputs: int, num_outputs: int) -> Dictionary:
+	var builder: BrainBuilderNative = BrainBuilderNative.new()
 	return builder.build(genome, size, num_inputs, num_outputs, _set_generation_progress_from_thread)
 
 
-## Called by BrainBuilder from the worker thread. Only shared progress state is touched here.
+## Called by BrainBuilderNative from the worker thread. Only shared progress state is touched here.
 func _set_generation_progress_from_thread(percent: int) -> void:
 	generation_progress_mutex.lock()
 	generation_progress = percent

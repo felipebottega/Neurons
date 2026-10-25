@@ -130,6 +130,8 @@ var generation_thread: Thread
 var generation_progress_mutex = Mutex.new()
 var generation_progress = 0
 var displayed_generation_progress = -1
+var displayed_generation_stage = ""
+var preparing_brain = false
 var generation_start_time = 0
 var histogram_data: Dictionary = {}
 var heatmap_data: Dictionary = {}
@@ -473,17 +475,20 @@ func _validate_form() -> void:
 	$SaveBrain.disabled = not valid or generating
 	$LoadBrain.disabled = generating
 
-## Builds a Genome object using exactly the genes written in the interface.
-func _genome_from_fields() -> Genome:
-	var genome = Genome.new()
+## Builds a native genome using exactly the genes written in the interface.
+## GenomeNative does not expose gene setters; OffspringNative provides the
+## existing validated Dictionary-to-GenomeNative conversion.
+func _genome_from_fields() -> GenomeNative:
+	var genome_data: Dictionary = {}
 
 	for gene_name in GENE_ORDER:
 		var field: LineEdit = get_node(GENE_FIELD_NAMES[gene_name])
-		genome.set(gene_name, _gene_from_text(field.text))
+		genome_data[gene_name] = _gene_from_text(field.text)
 
-	return genome
+	var offspring: OffspringNative = OffspringNative.new()
+	return offspring.genome_from_dictionary(genome_data)
 
-## Converts a gene string into the integer array expected by Genome.
+## Converts a gene string into the integer array expected by the native genome factory.
 func _gene_from_text(text: String) -> Array[int]:
 	var gene: Array[int] = []
 
@@ -500,15 +505,21 @@ func _generate_brain() -> void:
 	var size = Vector3i(int($LineEdit.text), int($LineEdit2.text), int($LineEdit3.text))
 	var num_inputs = int($LineEdit4.text)
 	var num_outputs = int($LineEdit5.text)
-	var genome = _genome_from_fields()
+	var genome: GenomeNative = _genome_from_fields()
+	if genome == null:
+		summary_label.text = "Could not create the native genome from the supplied genes."
+		return
 
 	generation_progress_mutex.lock()
 	generation_progress = 0
 	generation_progress_mutex.unlock()
 	displayed_generation_progress = -1
+	displayed_generation_stage = ""
+	preparing_brain = false
 	generation_start_time = Time.get_ticks_msec()
 
-	summary_label.text = "Generating brain... 0%"
+	summary_label.modulate = Color.WHITE
+	summary_label.text = "Creating neurons... 0%"
 	$GenerateBrain.disabled = true
 
 	generation_thread = Thread.new()
@@ -522,9 +533,10 @@ func _generate_brain() -> void:
 
 
 ## Worker-thread entry point. It must not access the scene tree or UI nodes.
-func _build_brain_thread(genome: Genome, size: Vector3i, num_inputs: int, num_outputs: int) -> Dictionary:
-	var builder = BrainBuilder.new()
-	return builder.build(genome, size, num_inputs, num_outputs, _set_generation_progress_from_thread)
+func _build_brain_thread(genome: GenomeNative, size: Vector3i, num_inputs: int, num_outputs: int) -> Dictionary:
+	var builder: BrainBuilderNative = BrainBuilderNative.new()
+	var result := builder.build(genome, size, num_inputs, num_outputs, _set_generation_progress_from_thread)
+	return result
 
 
 ## Called by BrainBuilder from the worker thread. Only shared progress state is touched here.
@@ -534,41 +546,85 @@ func _set_generation_progress_from_thread(percent: int) -> void:
 	generation_progress_mutex.unlock()
 
 
-## Keeps the UI responsive while a brain is being generated and prints progress to Output.
+## Updates the progress on the main thread. C++ reports 0..100 for native work;
+## the Explorer reserves the final 6% for statistics, histograms, and heatmaps.
 func _process(_delta: float) -> void:
-	if not _is_generating():
+	if generation_thread == null:
 		return
 
 	generation_progress_mutex.lock()
-	var progress = generation_progress
+	var native_progress: int = generation_progress
 	generation_progress_mutex.unlock()
 
-	if progress != displayed_generation_progress:
-		displayed_generation_progress = progress
-		summary_label.text = "Generating brain... %d%%" % progress
+	var progress: int = int(94.0 * native_progress / 100.0)
+	var stage := _native_generation_stage(native_progress)
+	if progress != displayed_generation_progress or stage != displayed_generation_stage:
+		_set_generation_status(progress, stage)
 
 	if not generation_thread.is_alive():
 		current_brain = generation_thread.wait_to_finish()
 		generation_thread = null
-
-		if displayed_generation_progress != 100:
-			displayed_generation_progress = 100
-
 		var elapsed_seconds = (Time.get_ticks_msec() - generation_start_time) / 1000.0
-		
+
 		if current_brain.is_empty():
 			_update_generation_failure(elapsed_seconds)
 			_validate_form()
 			return
-	
-		_update_summary(current_brain, elapsed_seconds)
-		_setup_histogram(current_brain)
-		_setup_heatmap(current_brain)
-		_validate_form()
 
-## Returns true while the worker thread is still owned by this scene.
+		preparing_brain = true
+		call_deferred("_finish_brain_generation", elapsed_seconds)
+
+
+## Phase names are based on the actual progress ranges in BrainBuilderNative.
+func _native_generation_stage(native_progress: int) -> String:
+	if native_progress >= 83:
+		return "Exporting brain data to Godot"
+	if native_progress >= 75:
+		return "Validating and rescuing connections"
+	if native_progress >= 21:
+		return "Generating connections"
+	if native_progress >= 16:
+		return "Assigning input and output neurons"
+	return "Creating neurons"
+
+
+func _set_generation_status(percent: int, stage: String) -> void:
+	displayed_generation_progress = percent
+	displayed_generation_stage = stage
+	summary_label.text = "%s... %d%%" % [stage, percent]
+
+
+## Stage the expensive Explorer passes across separate frames. 100% is only
+## reached once both native construction and the three UI datasets are ready.
+func _finish_brain_generation(build_seconds: float) -> void:
+	_set_generation_status(95, "Calculating brain statistics")
+	await get_tree().process_frame
+	_update_summary(current_brain, build_seconds)
+	var finished_summary: String = summary_label.text
+	var finished_color: Color = summary_label.modulate
+
+	_set_generation_status(97, "Preparing histograms")
+	await get_tree().process_frame
+	_setup_histogram(current_brain)
+
+	_set_generation_status(99, "Preparing heatmaps")
+	await get_tree().process_frame
+	_setup_heatmap(current_brain)
+
+	# 'Build time' is native construction; show full time through UI preparation too.
+	var total_seconds = (Time.get_ticks_msec() - generation_start_time) / 1000.0
+	displayed_generation_progress = 100
+	displayed_generation_stage = "Complete"
+	summary_label.modulate = finished_color
+	summary_label.text = "Brain ready (100%)\n\n" + finished_summary + "\nTotal preparation time: %.3f s" % total_seconds
+	preparing_brain = false
+	_validate_form()
+
+
+## Returns true while construction or Explorer data preparation is in progress.
 func _is_generating() -> bool:
-	return generation_thread != null and generation_thread.is_started()
+	return preparing_brain or (generation_thread != null and generation_thread.is_started())
+
 
 ## Displays the result of a failed brain generation.
 func _update_generation_failure(elapsed_seconds: float) -> void:
@@ -696,12 +752,29 @@ func _build_histogram_data(brain: Dictionary) -> void:
 	var K: int = brain["size"].z
 	var incoming := {}
 
+	# Accumulate connection weights by source slice while counting incoming
+	# connections. This avoids a second pass over millions of connections and
+	# avoids calling _add_histogram_value() for every individual connection.
+	var weight_slices: Array = []
+	weight_slices.resize(K)
+	for k in K:
+		var bins := PackedInt32Array()
+		bins.resize(BINS)
+		weight_slices[k] = bins
+
 	for neuron in neurons:
 		incoming[neuron["position"]] = 0
 
 	for neuron in neurons:
+		var k: int = neuron["position"].z
+		var bins: PackedInt32Array = weight_slices[k]
 		for connection in neuron["connections"]:
 			incoming[connection["target"]] += 1
+			# Connection-weight histograms always have the fixed range [0, 1].
+			# This is identical to _add_histogram_value("connection_weight", ...).
+			var bin: int = clampi(int(float(connection["weight"]) * BINS), 0, BINS - 1)
+			bins[bin] += 1
+		weight_slices[k] = bins
 
 	var incoming_max_degree := 1
 	var outgoing_max_degree := 1
@@ -732,6 +805,17 @@ func _build_histogram_data(brain: Dictionary) -> void:
 			"integer_range": parameter_key in ["incoming_connections", "outgoing_connections"]
 		}
 
+	# The whole-brain histogram is exactly the sum of the per-slice histograms.
+	# Do this just BINS * K times instead of once per connection.
+	var weight_all: PackedInt32Array = histogram_data["connection_weight"]["all"]
+	for slice_bins in weight_slices:
+		var bins: PackedInt32Array = slice_bins
+		for i in BINS:
+			weight_all[i] += bins[i]
+	histogram_data["connection_weight"]["slices"] = weight_slices
+	histogram_data["connection_weight"]["all"] = weight_all
+
+	# All other histogram parameters have just one value per neuron.
 	for neuron in neurons:
 		var k: int = neuron["position"].z
 
@@ -753,9 +837,6 @@ func _build_histogram_data(brain: Dictionary) -> void:
 			role = 1.0
 
 		_add_histogram_value("neuron_role", role, k)
-
-		for connection in neuron["connections"]:
-			_add_histogram_value("connection_weight", connection["weight"], k)
 
 
 ## Returns the common x-axis range used by a histogram parameter across all slices.

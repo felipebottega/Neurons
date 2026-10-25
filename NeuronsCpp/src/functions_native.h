@@ -31,16 +31,16 @@ public:
 	double D(int64_t i, int64_t j, int64_t k, const Array &x, int64_t I, int64_t J, int64_t K) const;
 	double P(const Array &x) const;
 
-	static double w_value(int32_t t);
-	static double u_value(int32_t xt);
-	static double f_value(double beta, const std::vector<int32_t> &x);
-	static double g_value(bool delta_1, bool delta_2, const std::vector<int32_t> &x);
-	static double beta_value(const std::vector<int32_t> &x, int32_t I, int32_t J);
-	static double a_value(int32_t i, int32_t j, int32_t k, const std::vector<int32_t> &x, int32_t I, int32_t J, int32_t K);
+	static float w_value(int32_t t);
+	static float u_value(int32_t xt);
+	static float f_value(float beta, const std::vector<int32_t> &x);
+	static float g_value(bool delta_1, bool delta_2, const std::vector<int32_t> &x);
+	static float beta_value(const std::vector<int32_t> &x, int32_t I, int32_t J);
+	static float a_value(int32_t i, int32_t j, int32_t k, const std::vector<int32_t> &x, int32_t I, int32_t J, int32_t K);
 	static Vector4 h_coefficients_value(const std::vector<int32_t> &x);
-	static double h_value(double A_ijk, double A_uvw, const Vector4 &coefficients);
-	static double d_value(int32_t i, int32_t j, int32_t k, const std::vector<int32_t> &x, int32_t I, int32_t J, int32_t K);
-	static double p_value(const std::vector<int32_t> &x);
+	static float h_value(float A_ijk, float A_uvw, const Vector4 &coefficients);
+	static float d_value(int32_t i, int32_t j, int32_t k, const std::vector<int32_t> &x, int32_t I, int32_t J, int32_t K);
+	static float p_value(const std::vector<int32_t> &x);
 
 private:
 	static std::vector<int32_t> _array_to_vector(const Array &x);

@@ -7,7 +7,7 @@
 using namespace godot;
 
 namespace {
-constexpr double PI_VALUE = 3.141592653589793238462643383279502884;
+constexpr float PI_VALUE = 3.141592653589793238462643383279502884f;
 }
 
 void FunctionsNative::_bind_methods() {
@@ -83,83 +83,83 @@ double FunctionsNative::P(const Array &x) const {
 	return p_value(_array_to_vector(x));
 }
 
-double FunctionsNative::w_value(int32_t t) {
-	return std::sqrt(1.0 + static_cast<double>(t));
+float FunctionsNative::w_value(int32_t t) {
+	return std::sqrt(1.0f + static_cast<float>(t));
 }
 
-double FunctionsNative::u_value(int32_t xt) {
-	return 1.0 + static_cast<double>(xt);
+float FunctionsNative::u_value(int32_t xt) {
+	return 1.0f + static_cast<float>(xt);
 }
 
-double FunctionsNative::f_value(double beta, const std::vector<int32_t> &x) {
-	double y = 0.0;
+float FunctionsNative::f_value(float beta, const std::vector<int32_t> &x) {
+	float y = 0.0f;
 
 	for (int32_t t = 0; t < static_cast<int32_t>(x.size()); ++t) {
-		y += w_value(t) * std::pow(beta, static_cast<double>(x[static_cast<size_t>(t)]));
+		y += w_value(t) * std::pow(beta, static_cast<float>(x[static_cast<size_t>(t)]));
 	}
 
 	return y;
 }
 
-double FunctionsNative::g_value(bool delta_1, bool delta_2, const std::vector<int32_t> &x) {
-	double y = 0.0;
+float FunctionsNative::g_value(bool delta_1, bool delta_2, const std::vector<int32_t> &x) {
+	float y = 0.0f;
 	const int32_t exponent_1 = delta_1 ? 1 : 0;
 	const int32_t exponent_2 = delta_2 ? 1 : 0;
 
 	for (int32_t t = 0; t < static_cast<int32_t>(x.size()); ++t) {
-		const double gene_value = 1.0 + static_cast<double>(x[static_cast<size_t>(t)]);
-		y += std::sin(1.0 + static_cast<double>(t))
-				* std::pow(std::sin(gene_value), static_cast<double>(exponent_1))
-				* std::pow(std::cos(gene_value), static_cast<double>(exponent_2));
+		const float gene_value = 1.0f + static_cast<float>(x[static_cast<size_t>(t)]);
+		y += std::sin(1.0f + static_cast<float>(t))
+				* std::pow(std::sin(gene_value), static_cast<float>(exponent_1))
+				* std::pow(std::cos(gene_value), static_cast<float>(exponent_2));
 	}
 
 	return y;
 }
 
-double FunctionsNative::beta_value(const std::vector<int32_t> &x, int32_t I, int32_t J) {
-	double weighted_sum = 0.0;
-	double max_sum = 0.0;
+float FunctionsNative::beta_value(const std::vector<int32_t> &x, int32_t I, int32_t J) {
+	float weighted_sum = 0.0f;
+	float max_sum = 0.0f;
 
 	for (int32_t t = 0; t < static_cast<int32_t>(x.size()); ++t) {
-		const double weight = w_value(t);
-		weighted_sum += weight * static_cast<double>(x[static_cast<size_t>(t)]);
-		max_sum += 3.0 * weight;
+		const float weight = w_value(t);
+		weighted_sum += weight * static_cast<float>(x[static_cast<size_t>(t)]);
+		max_sum += 3.0f * weight;
 	}
 
-	const double scale = std::pow(static_cast<double>(I * J) / 16.0, 1.0 / 3.0);
-	return 1.0 + weighted_sum / max_sum * scale;
+	const float scale = std::pow(static_cast<float>(I * J) / 16.0f, 1.0f / 3.0f);
+	return 1.0f + weighted_sum / max_sum * scale;
 }
 
-double FunctionsNative::a_value(int32_t i, int32_t j, int32_t k, const std::vector<int32_t> &x, int32_t I, int32_t J, int32_t K) {
+float FunctionsNative::a_value(int32_t i, int32_t j, int32_t k, const std::vector<int32_t> &x, int32_t I, int32_t J, int32_t K) {
 	const int32_t p = static_cast<int32_t>(x.size());
-	const int32_t n = static_cast<int32_t>(std::llround(std::pow(static_cast<double>(p), 1.0 / 3.0)));
-	const double a = static_cast<double>(i) / static_cast<double>(I - 1);
-	const double b = static_cast<double>(j) / static_cast<double>(J - 1);
-	const double c = static_cast<double>(k) / static_cast<double>(K - 1);
-	double y = 0.0;
+	const int32_t n = static_cast<int32_t>(std::llround(std::pow(static_cast<float>(p), 1.0f / 3.0f)));
+	const float a = static_cast<float>(i) / static_cast<float>(I - 1);
+	const float b = static_cast<float>(j) / static_cast<float>(J - 1);
+	const float c = static_cast<float>(k) / static_cast<float>(K - 1);
+	float y = 0.0f;
 
 	for (int32_t r = 0; r < n; ++r) {
 		for (int32_t s = 0; s < n; ++s) {
 			for (int32_t q = 0; q < n; ++q) {
 				const int32_t t = q + n * s + n * n * r;
-				const double coefficient = 2.0 * static_cast<double>(x[static_cast<size_t>(t)]) / 3.0 - 1.0;
+				const float coefficient = 2.0f * static_cast<float>(x[static_cast<size_t>(t)]) / 3.0f - 1.0f;
 				y += coefficient
-						* std::cos(PI_VALUE * static_cast<double>(r) * a)
-						* std::cos(PI_VALUE * static_cast<double>(s) * b)
-						* std::cos(PI_VALUE * static_cast<double>(q) * c);
+						* std::cos(PI_VALUE * static_cast<float>(r) * a)
+						* std::cos(PI_VALUE * static_cast<float>(s) * b)
+						* std::cos(PI_VALUE * static_cast<float>(q) * c);
 			}
 		}
 	}
 
-	return std::tanh(y / std::sqrt(static_cast<double>(p)));
+	return std::tanh(y / std::sqrt(static_cast<float>(p)));
 }
 
 Vector4 FunctionsNative::h_coefficients_value(const std::vector<int32_t> &x) {
-	Vector4 coefficients(0.0, 0.0, 0.0, 0.0);
-	double C = 0.0;
+	Vector4 coefficients(0.0f, 0.0f, 0.0f, 0.0f);
+	float C = 0.0f;
 
 	for (int32_t t = 0; t < static_cast<int32_t>(x.size()); ++t) {
-		const double weight = w_value(t);
+		const float weight = w_value(t);
 		C += weight;
 
 		switch (x[static_cast<size_t>(t)]) {
@@ -180,24 +180,24 @@ Vector4 FunctionsNative::h_coefficients_value(const std::vector<int32_t> &x) {
 		}
 	}
 
-	return coefficients * (3.0 * PI_VALUE / (4.0 * C));
+	return coefficients * (4.0f / C);
 }
 
-double FunctionsNative::h_value(double A_ijk, double A_uvw, const Vector4 &coefficients) {
+float FunctionsNative::h_value(float A_ijk, float A_uvw, const Vector4 &coefficients) {
 	return std::sin(
-			PI_VALUE / 16.0
-			+ coefficients.x * std::cos(A_ijk) * std::sin(A_uvw)
-			+ coefficients.y * std::cos(2.0 * A_ijk) * std::sin(2.0 * A_uvw)
-			+ coefficients.z * std::cos(3.0 * A_ijk) * std::sin(3.0 * A_uvw)
-			+ coefficients.w * std::cos(4.0 * A_ijk) * std::sin(4.0 * A_uvw));
+			3.0f * PI_VALUE / 8.0f
+			+ coefficients.x * (std::sin(A_ijk) + std::cos(A_uvw))
+			+ coefficients.y * (std::sin(2.0f * A_ijk) + std::cos(2.0f * A_uvw))
+			+ coefficients.z * (std::sin(3.0f * A_ijk) + std::cos(3.0f * A_uvw))
+			+ coefficients.w * (std::sin(4.0f * A_ijk) + std::cos(4.0f * A_uvw)));
 }
 
-double FunctionsNative::d_value(int32_t i, int32_t j, int32_t k, const std::vector<int32_t> &x, int32_t I, int32_t J, int32_t K) {
-	return 1.5 + a_value(i, j, k, x, I, J, K);
+float FunctionsNative::d_value(int32_t i, int32_t j, int32_t k, const std::vector<int32_t> &x, int32_t I, int32_t J, int32_t K) {
+	return 1.5f + a_value(i, j, k, x, I, J, K);
 }
 
-double FunctionsNative::p_value(const std::vector<int32_t> &x) {
-	return 1.75 + 0.25 * std::cos(g_value(true, true, x));
+float FunctionsNative::p_value(const std::vector<int32_t> &x) {
+	return 1.75f + 0.25f * std::cos(g_value(true, true, x));
 }
 
 std::vector<int32_t> FunctionsNative::_array_to_vector(const Array &x) {

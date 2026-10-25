@@ -35,23 +35,23 @@ public:
 private:
 	struct NativeConnection {
 		int32_t target_spatial_index = 0;
-		double weight = 0.0;
-		double eligibility_trace = 0.0;
+		float weight = 0.0f;
+		float eligibility_trace = 0.0f;
 	};
 
 	struct NativeNeuron {
 		Vector3i position;
 		bool input = false;
 		bool output = false;
-		double activation_threshold = 0.0;
-		double decay_factor = 0.0;
-		double retention_factor = 0.0;
+		float activation_threshold = 0.0f;
+		float decay_factor = 0.0f;
+		float retention_factor = 0.0f;
 		int32_t polarity_factor = 1;
-		double hebbian_plasticity_rate = 0.0;
-		double modulatory_release_factor = 0.0;
-		double modulatory_sensitivity = 0.0;
-		double modulatory_field = 0.0;
-		double connections_value = 0.0;
+		float hebbian_plasticity_rate = 0.0f;
+		float modulatory_release_factor = 0.0f;
+		float modulatory_sensitivity = 0.0f;
+		float modulatory_field = 0.0f;
+		float connections_value = 0.0f;
 		std::vector<NativeConnection> connections;
 	};
 
@@ -70,15 +70,15 @@ private:
 
 	struct NativeBrain {
 		Vector3i size;
-		double beta = 0.0;
+		float beta = 0.0f;
 		int32_t max_connections = 0;
-		double refractory_strength = 0.0;
-		double exponential_factor = 0.0;
-		double structural_plasticity = 0.0;
-		double lambda = 0.0;
-		double nu = 0.0;
-		double mu = 0.0;
-		double input_gain = 0.0;
+		float refractory_strength = 0.0f;
+		float exponential_factor = 0.0f;
+		float structural_plasticity = 0.0f;
+		float lambda = 0.0f;
+		float nu = 0.0f;
+		float mu = 0.0f;
+		float input_gain = 0.0f;
 		bool valid = false;
 		IsolationCounts isolated_before_rescue;
 		IsolationCounts isolated_after_rescue;
@@ -92,7 +92,7 @@ private:
 	bool _clear_invalid_connections(NativeBrain &brain, const std::vector<int32_t> &gene, const std::vector<int32_t> &input_influence_gene, const Callable &progress_callback) const;
 	bool _rescue_isolated_neurons(NativeBrain &brain, const std::vector<int32_t> &gene, const std::vector<int32_t> &neuron_by_spatial_index, std::vector<int32_t> &incoming_connections, const Callable &progress_callback) const;
 	Vector3 _modulatory_dynamics(const std::vector<int32_t> &gene) const;
-	Dictionary _to_dictionary(const NativeBrain &brain) const;
+	Dictionary _to_dictionary(const NativeBrain &brain, const Callable &progress_callback) const;
 	void _report_progress(const Callable &progress_callback, int32_t percent) const;
 
 	static int32_t _spatial_index(const Vector3i &position, int32_t I, int32_t IJ);

@@ -23,7 +23,7 @@ TooltipPanel/styles/panel = SubResource("StyleBoxFlat_7ag8p")
 
 [node name="Simulations" type="Node2D" unique_id=1422867934]
 script = ExtResource("1_q38lp")
-metadata/_edit_horizontal_guides_ = [86.0, 620.0]
+metadata/_edit_horizontal_guides_ = [86.0, 620.0, 755.0]
 metadata/_edit_vertical_guides_ = [260.0]
 
 [node name="LineEdit" type="LineEdit" parent="." unique_id=178173070]
@@ -351,3 +351,22 @@ offset_top = -34.0
 offset_right = 40.0
 theme_override_font_sizes/font_size = 24
 text = "Resolution:"
+
+[node name="HeatmapTrackingLabel" type="Label" parent="." unique_id=1828532169]
+offset_left = 438.0
+offset_top = 748.0
+offset_right = 586.0
+offset_bottom = 782.0
+theme_override_font_sizes/font_size = 24
+text = "Tracking:"
+
+[node name="HeatmapTracking" type="Button" parent="." unique_id=2094371381]
+offset_left = 438.0
+offset_top = 785.0
+offset_right = 524.0
+offset_bottom = 818.0
+tooltip_text = "ON: record phenotype-fitness samples and update the heatmap for each new generation.
+OFF: freeze the current heatmap and skip phenotype collection. Generations skipped while OFF are not recovered when switched back ON."
+toggle_mode = true
+button_pressed = true
+text = "ON"

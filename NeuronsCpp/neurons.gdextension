@@ -6,3 +6,4 @@ compatibility_minimum = "4.7"
 [libraries]
 
 windows.debug.x86_64 = "res://bin/neurons.dll"
+windows.release.x86_64 = "res://bin/neurons.dll"

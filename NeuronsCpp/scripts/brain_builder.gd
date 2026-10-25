@@ -405,12 +405,18 @@ func _clear_invalid_connections(brain: Dictionary, gene: Array, input_influence_
 	brain["input_gain"] = (1.0 + sin(math.G(true, true, input_influence_gene))) * mean_internal_incoming
 	var input_min_weight = 1.0 / (1.0 + float(brain["input_gain"]))
 
+	# Apply the source-dependent attenuation after top-H selection, invalid-connection
+	# filtering and developmental rescue. Rescued connections are included.
 	for neuron in neurons:
-		if not neuron["input"]:
-			continue
+		var source_a: float = float(neuron["connections_value"])
+		var attenuation: float = 1.0 - source_a * source_a
 
 		for connection in neuron["connections"]:
-			connection["weight"] = maxf(float(connection["weight"]), input_min_weight)
+			var initial_weight: float = float(connection["weight"]) * attenuation
+			if neuron["input"]:
+				# Keep the existing minimum initial weight for input synapses.
+				initial_weight = maxf(initial_weight, input_min_weight)
+			connection["weight"] = initial_weight
 
 	return rescue_success and isolated_internal == 0 and isolated_output == 0 and isolated_input == 0
 

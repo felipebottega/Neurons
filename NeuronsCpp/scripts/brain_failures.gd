@@ -2,6 +2,8 @@ extends Node2D
 
 
 const NMAX_BIN_WIDTH = 10
+const RESCUE_BIN_WIDTH = 5
+const RESCUE_BIN_COUNT = 20
 
 
 class NMaxValidityPlot:
@@ -130,6 +132,93 @@ class NMaxValidityPlot:
 				)
 
 
+class RescueNeedPlot:
+	extends Control
+
+	var counts: PackedInt32Array = PackedInt32Array()
+	var total_brains: int = 0
+	var mean_rate: float = 0.0
+	var standard_deviation: float = 0.0
+
+
+	func set_distribution(new_counts: PackedInt32Array, new_total: int, new_mean: float, new_sd: float) -> void:
+		"""
+		Input: distribution of per-brain isolation percentages and its summary statistics.
+		Output: refreshes the histogram without retaining any brain's connection data.
+		"""
+		counts = new_counts.duplicate()
+		total_brains = new_total
+		mean_rate = new_mean
+		standard_deviation = new_sd
+		queue_redraw()
+
+
+	func _draw() -> void:
+		var font = ThemeDB.fallback_font
+		var title_color = Color(1.0, 1.0, 1.0, 0.92)
+		var text_color = Color(1.0, 1.0, 1.0, 0.83)
+		var grid_color = Color(1.0, 1.0, 1.0, 0.18)
+		var bar_color = Color(0.95, 0.55, 0.20, 0.90)
+		var left = 53.0
+		var top = 55.0
+		var right = 12.0
+		var bottom = 64.0
+		var graph_width = size.x - left - right
+		var graph_height = size.y - top - bottom
+
+		draw_string(font, Vector2(10.0, 22.0), "Rescue need per brain", HORIZONTAL_ALIGNMENT_LEFT, -1.0, 18, title_color)
+
+		if total_brains == 0 or graph_width <= 0.0 or graph_height <= 0.0:
+			draw_string(font, Vector2(left, top + 30.0), "Waiting for generated brains...", HORIZONTAL_ALIGNMENT_LEFT, -1.0, 13, text_color)
+			return
+
+		# Heights show the percentage of brains in each bin (not neuron counts).
+		var max_percentage = 0.0
+		for count in counts:
+			max_percentage = maxf(max_percentage, 100.0 * count / total_brains)
+		var axis_max = clampf(ceil(max_percentage / 10.0) * 10.0, 10.0, 100.0)
+
+		for tick in 3:
+			var tick_ratio = float(tick) / 2.0
+			var y = top + graph_height * (1.0 - tick_ratio)
+			draw_line(Vector2(left, y), Vector2(left + graph_width, y), grid_color, 1.0)
+			draw_string(font, Vector2(5.0, y + 4.0), "%.0f%%" % (axis_max * tick_ratio), HORIZONTAL_ALIGNMENT_RIGHT, left - 12.0, 12, text_color)
+
+		draw_line(Vector2(left, top), Vector2(left, top + graph_height), text_color, 1.0)
+		draw_line(Vector2(left, top + graph_height), Vector2(left + graph_width, top + graph_height), text_color, 1.0)
+
+		var slot_width = graph_width / 20.0
+		var bar_width = maxf(2.0, slot_width * 0.76)
+		for index in counts.size():
+			var percentage = 100.0 * counts[index] / total_brains
+			if percentage <= 0.0:
+				continue
+			var bar_height = graph_height * percentage / axis_max
+			var center_x = left + slot_width * (index + 0.5)
+			draw_rect(Rect2(center_x - bar_width / 2.0, top + graph_height - bar_height, bar_width, bar_height), bar_color)
+
+		for percentage in range(0, 101, 20):
+			var x = left + graph_width * float(percentage) / 100.0
+			draw_string(font, Vector2(x - 13.0, top + graph_height + 19.0), str(percentage), HORIZONTAL_ALIGNMENT_CENTER, 26.0, 12, text_color)
+
+		draw_string(font, Vector2(left, top + graph_height + 39.0), "Neurons needing rescue (%)", HORIZONTAL_ALIGNMENT_LEFT, -1.0, 12, text_color)
+		draw_string(font, Vector2(10.0, size.y - 5.0), "Mean: %.1f%%    SD: %.1f pp" % [mean_rate, standard_deviation], HORIZONTAL_ALIGNMENT_LEFT, -1.0, 13, text_color)
+
+
+	func _get_tooltip(at_position: Vector2) -> String:
+		# Each bar covers [5*i, 5*(i+1)) percent, except the last, which includes 100%.
+		var left = 53.0
+		var width = size.x - left - 12.0
+		if total_brains == 0 or width <= 0.0 or at_position.x < left or at_position.x > left + width:
+			return ""
+		if at_position.y < 55.0 or at_position.y > size.y - 64.0:
+			return ""
+		var index = clampi(int((at_position.x - left) / width * 20.0), 0, 19)
+		var count = counts[index]
+		var label = "%d%%–%d%%" % [index * 5, (index + 1) * 5]
+		return "%s neurons needing rescue\n%d of %d brains (%.2f%%)" % [label, count, total_brains, 100.0 * count / total_brains]
+
+
 var generation_thread: Thread
 var state_mutex = Mutex.new()
 
@@ -162,6 +251,11 @@ var invalid_max_connections_sum = 0.0
 var nmax_total_counts: Dictionary = {}
 var nmax_valid_counts: Dictionary = {}
 
+# One 5-percentage-point bin per brain; populated only by the worker thread.
+var rescue_need_counts: PackedInt32Array = PackedInt32Array()
+var rescue_need_rate_sum = 0.0
+var rescue_need_rate_squared_sum = 0.0
+
 var reciprocal_rate_sum = 0.0
 var reciprocal_rate_squared_sum = 0.0
 var reciprocal_rate_min = INF
@@ -172,6 +266,7 @@ var total_directional_connections = 0
 var total_reciprocal_directional_connections = 0
 
 var nmax_plot: NMaxValidityPlot
+var rescue_need_plot: RescueNeedPlot
 var last_plot_generated = -1
 
 var run_start_msec = 0
@@ -198,9 +293,63 @@ func _ready() -> void:
 	nmax_plot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(nmax_plot)
 
+	# Compact companion chart, below External Parameters and right of the N_max plot.
+	rescue_need_plot = RescueNeedPlot.new()
+	rescue_need_plot.position = Vector2(1260.0, 360.0)
+	rescue_need_plot.size = Vector2(390.0, 390.0)
+	add_child(rescue_need_plot)
+
+	# Descriptive boxes sit below both charts, aligned at the same height.
+	var caption_top = maxf(
+		nmax_plot.position.y + nmax_plot.size.y,
+		rescue_need_plot.position.y + rescue_need_plot.size.y
+	) + 14.0
+	_add_chart_caption(
+		Vector2(nmax_plot.position.x + 55.0, caption_top),
+		Vector2(nmax_plot.size.x - 55.0, 100.0),
+		"Each bar gives the percentage of valid brains among all brains whose N_max "
+		+ "falls within that interval. The n label shows how many brains were tested "
+		+ "in the interval."
+	)
+	_add_chart_caption(
+		Vector2(rescue_need_plot.position.x + 10.0, caption_top),
+		Vector2(rescue_need_plot.size.x - 10.0, 100.0),
+		"Each bar shows the percentage of brains with that proportion of neurons "
+		+ "isolated before rescue (5 percentage-point intervals). Mean and SD "
+		+ "describe the percentages across brains."
+	)
+
 	$Stop.disabled = true
 	_validate_form()
 	_update_summary()
+
+
+func _add_chart_caption(at: Vector2, dimensions: Vector2, description: String) -> void:
+	"""Create a subtle gray explanation panel without changing the scene file."""
+	var panel = PanelContainer.new()
+	panel.position = at
+	panel.size = dimensions
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var background = StyleBoxFlat.new()
+	background.bg_color = Color(0.27, 0.28, 0.29, 0.9)
+	background.border_color = Color(0.7, 0.7, 0.7, 0.35)
+	background.set_border_width_all(1)
+	background.set_corner_radius_all(6)
+	background.set_content_margin_all(11.0)
+	panel.add_theme_stylebox_override("panel", background)
+
+	var caption = Label.new()
+	caption.text = description
+	caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	caption.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	caption.add_theme_font_size_override("font_size", 14)
+	caption.add_theme_color_override("font_color", Color(0.97, 0.97, 0.97))
+	panel.add_child(caption)
+	add_child(panel)
 
 
 func _exit_tree() -> void:
@@ -333,10 +482,10 @@ func _generation_loop(size: Vector3i, num_inputs: int, num_outputs: int) -> void
 	Input: fixed external brain parameters.
 	Output: continuously generates random genomes and records brain validity statistics until Stop is requested.
 	"""
-	var builder = BrainBuilder.new()
+	var builder: BrainBuilderNative = BrainBuilderNative.new()
 
 	while not _should_stop():
-		var genome = Genome.new()
+		var genome: GenomeNative = GenomeNative.new()
 
 		state_mutex.lock()
 		generation_progress = 0
@@ -351,7 +500,7 @@ func _generation_loop(size: Vector3i, num_inputs: int, num_outputs: int) -> void
 			_set_generation_progress_from_thread
 		)
 
-		genome.free()
+		# GenomeNative inherits RefCounted; Godot releases it automatically.
 		_record_brain(brain)
 
 	state_mutex.lock()
@@ -390,6 +539,11 @@ func _record_brain(brain: Dictionary) -> void:
 	var before_total = before_internal + before_output + before_input
 	var after_total = after_internal + after_output + after_input
 	var max_connections = int(brain.get("max_connections", 0))
+	var neurons: Array = brain.get("neurons", [])
+	var rescue_need_percentage = 0.0
+	if not neurons.is_empty():
+		rescue_need_percentage = 100.0 * before_total / neurons.size()
+	var rescue_bin_index = clampi(int(floor(rescue_need_percentage / RESCUE_BIN_WIDTH)), 0, RESCUE_BIN_COUNT - 1)
 	var reciprocity = _calculate_reciprocity(brain)
 	var reciprocal_rate = float(reciprocity["rate"])
 	var directional_connections = int(reciprocity["total"])
@@ -398,6 +552,9 @@ func _record_brain(brain: Dictionary) -> void:
 	state_mutex.lock()
 
 	generated_brains += 1
+	rescue_need_counts[rescue_bin_index] += 1
+	rescue_need_rate_sum += rescue_need_percentage
+	rescue_need_rate_squared_sum += rescue_need_percentage * rescue_need_percentage
 
 	nmax_total_counts[max_connections] = int(nmax_total_counts.get(max_connections, 0)) + 1
 
@@ -545,6 +702,9 @@ func _update_summary() -> void:
 	var local_invalid_max_connections_sum = invalid_max_connections_sum
 	var local_nmax_total_counts: Dictionary = nmax_total_counts.duplicate()
 	var local_nmax_valid_counts: Dictionary = nmax_valid_counts.duplicate()
+	var local_rescue_need_counts = rescue_need_counts.duplicate()
+	var local_rescue_need_rate_sum = rescue_need_rate_sum
+	var local_rescue_need_rate_squared_sum = rescue_need_rate_squared_sum
 
 	var local_reciprocal_rate_sum = reciprocal_rate_sum
 	var local_reciprocal_rate_squared_sum = reciprocal_rate_squared_sum
@@ -636,6 +796,12 @@ func _update_summary() -> void:
 
 	if local_generated != last_plot_generated:
 		nmax_plot.set_bins(_build_nmax_bins(local_nmax_total_counts, local_nmax_valid_counts))
+		var mean_rescue_need = 0.0
+		var sd_rescue_need = 0.0
+		if local_generated > 0:
+			mean_rescue_need = local_rescue_need_rate_sum / local_generated
+			sd_rescue_need = sqrt(maxf(0.0, local_rescue_need_rate_squared_sum / local_generated - mean_rescue_need * mean_rescue_need))
+		rescue_need_plot.set_distribution(local_rescue_need_counts, local_generated, mean_rescue_need, sd_rescue_need)
 		last_plot_generated = local_generated
 
 	var progress_text = ""
@@ -732,6 +898,10 @@ func _reset_statistics() -> void:
 	invalid_max_connections_sum = 0.0
 	nmax_total_counts.clear()
 	nmax_valid_counts.clear()
+	rescue_need_counts = PackedInt32Array()
+	rescue_need_counts.resize(RESCUE_BIN_COUNT)
+	rescue_need_rate_sum = 0.0
+	rescue_need_rate_squared_sum = 0.0
 
 	reciprocal_rate_sum = 0.0
 	reciprocal_rate_squared_sum = 0.0
@@ -748,6 +918,8 @@ func _reset_statistics() -> void:
 
 	if nmax_plot != null:
 		nmax_plot.set_bins([])
+	if rescue_need_plot != null:
+		rescue_need_plot.set_distribution(PackedInt32Array(), 0, 0.0, 0.0)
 
 
 func _build_nmax_bins(total_counts: Dictionary, valid_counts: Dictionary) -> Array:

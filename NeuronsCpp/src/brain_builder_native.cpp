@@ -3,6 +3,7 @@
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/array.hpp>
+#include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/vector4.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -282,7 +283,7 @@ void run_parallel(int32_t count, Function function, ProgressFunction progress_fu
 
 struct ConnectionCandidate {
 	int32_t target_spatial_index = 0;
-	double value = 0.0;
+	float value = 0.0f;
 };
 
 }
@@ -321,8 +322,8 @@ Dictionary BrainBuilderNative::build(
 	brain.size = size;
 	brain.beta = FunctionsNative::beta_value(genome->beta, size.x, size.y);
 	brain.max_connections = static_cast<int32_t>(std::floor(FunctionsNative::f_value(brain.beta, genome->max_connections)));
-	brain.refractory_strength = FunctionsNative::f_value(0.4, genome->refractory_strength);
-	brain.exponential_factor = FunctionsNative::f_value(0.4, genome->exponential_factor);
+	brain.refractory_strength = FunctionsNative::f_value(0.4f, genome->refractory_strength);
+	brain.exponential_factor = FunctionsNative::f_value(0.4f, genome->exponential_factor);
 	brain.structural_plasticity = FunctionsNative::p_value(genome->structural_plasticity);
 
 	const Vector3 modulatory_dynamics = _modulatory_dynamics(genome->modulatory_dynamics);
@@ -334,9 +335,11 @@ Dictionary BrainBuilderNative::build(
 	_set_input_output_neurons(brain, static_cast<int32_t>(num_inputs), static_cast<int32_t>(num_outputs), progress_callback);
 	_create_connections(brain, genome->connections, progress_callback);
 	brain.valid = _clear_invalid_connections(brain, genome->connections, genome->input_influence, progress_callback);
-	_report_progress(progress_callback, 100);
 
-	return _to_dictionary(brain);
+	// Native construction is not finished until its millions of Godot Variants are created.
+	Dictionary result = _to_dictionary(brain, progress_callback);
+	_report_progress(progress_callback, 100);
+	return result;
 }
 
 void BrainBuilderNative::_create_neurons(NativeBrain &brain, const GenomeNative &genome, const Callable &progress_callback) const {
@@ -344,8 +347,8 @@ void BrainBuilderNative::_create_neurons(NativeBrain &brain, const GenomeNative 
 	const int32_t J = brain.size.y;
 	const int32_t K = brain.size.z;
 	const int32_t total_neurons = I * J * K;
-	const double first_polarity = FunctionsNative::a_value(0, 0, 0, genome.polarity_factor, I, J, K);
-	const double retention_normalization = 1.0 - std::exp(-2.0);
+	const float first_polarity = FunctionsNative::a_value(0, 0, 0, genome.polarity_factor, I, J, K);
+	const float retention_normalization = 1.0f - std::exp(-2.0f);
 
 	brain.neurons.resize(static_cast<size_t>(total_neurons));
 
@@ -360,25 +363,26 @@ void BrainBuilderNative::_create_neurons(NativeBrain &brain, const GenomeNative 
 
 				NativeNeuron neuron;
 				neuron.position = Vector3i(i, j, k);
-				neuron.activation_threshold = (1.0 + FunctionsNative::a_value(i, j, k, genome.activation_threshold, I, J, K)) / 2.0;
+				neuron.activation_threshold = (1.0f + FunctionsNative::a_value(i, j, k, genome.activation_threshold, I, J, K)) / 2.0f;
 				neuron.decay_factor = FunctionsNative::d_value(i, j, k, genome.decay_factor, I, J, K);
-				neuron.retention_factor = (1.0 - std::exp(-1.0 - FunctionsNative::a_value(i, j, k, genome.retention_factor, I, J, K))) / retention_normalization;
+				neuron.retention_factor = (1.0f - std::exp(-1.0f - FunctionsNative::a_value(i, j, k, genome.retention_factor, I, J, K))) / retention_normalization;
 				neuron.polarity_factor = FunctionsNative::a_value(i, j, k, genome.polarity_factor, I, J, K) >= first_polarity ? 1 : -1;
-				neuron.hebbian_plasticity_rate = (1.0 + FunctionsNative::a_value(i, j, k, genome.hebbian_plasticity_rate, I, J, K)) / 4.0;
-				neuron.modulatory_release_factor = (1.0 + FunctionsNative::a_value(i, j, k, genome.modulatory_release_factor, I, J, K)) / 2.0;
+				neuron.hebbian_plasticity_rate = (1.0f + FunctionsNative::a_value(i, j, k, genome.hebbian_plasticity_rate, I, J, K)) / 4.0f;
+				neuron.modulatory_release_factor = (1.0f + FunctionsNative::a_value(i, j, k, genome.modulatory_release_factor, I, J, K)) / 2.0f;
 				neuron.modulatory_sensitivity = FunctionsNative::a_value(i, j, k, genome.modulatory_sensitivity, I, J, K);
-				neuron.modulatory_field = 0.0;
+				neuron.modulatory_field = 0.0f;
 				neuron.connections_value = FunctionsNative::a_value(i, j, k, genome.connections, I, J, K);
 				brain.neurons[static_cast<size_t>(creation_index)] = std::move(neuron);
 			},
 			[&](int32_t completed) {
-				_report_progress(progress_callback, static_cast<int32_t>(20.0 * static_cast<double>(completed) / static_cast<double>(total_neurons)));
+				_report_progress(progress_callback, static_cast<int32_t>(16.0f * static_cast<float>(completed) / static_cast<float>(total_neurons)));
 			});
 }
 
 void BrainBuilderNative::_set_input_output_neurons(NativeBrain &brain, int32_t num_inputs, int32_t num_outputs, const Callable &progress_callback) const {
 	const int32_t K = brain.size.z;
 	const int32_t neurons_per_slice = brain.size.x * brain.size.y;
+	_report_progress(progress_callback, 17);
 	std::vector<std::vector<NativeNeuron>> slices(static_cast<size_t>(K));
 
 	for (std::vector<NativeNeuron> &slice : slices) {
@@ -410,8 +414,8 @@ void BrainBuilderNative::_set_input_output_neurons(NativeBrain &brain, int32_t n
 	for (int32_t i = 0; i < num_inputs; ++i) {
 		NativeNeuron &neuron = brain.neurons[static_cast<size_t>(i)];
 		neuron.input = true;
-		neuron.activation_threshold = 0.0;
-		neuron.retention_factor = 0.0;
+		neuron.activation_threshold = 0.0f;
+		neuron.retention_factor = 0.0f;
 		neuron.polarity_factor = 1;
 	}
 
@@ -419,7 +423,7 @@ void BrainBuilderNative::_set_input_output_neurons(NativeBrain &brain, int32_t n
 		brain.neurons[brain.neurons.size() - 1 - static_cast<size_t>(i)].output = true;
 	}
 
-	_report_progress(progress_callback, 30);
+	_report_progress(progress_callback, 21);
 }
 
 void BrainBuilderNative::_create_connections(NativeBrain &brain, const std::vector<int32_t> &gene, const Callable &progress_callback) const {
@@ -428,7 +432,7 @@ void BrainBuilderNative::_create_connections(NativeBrain &brain, const std::vect
 	const int32_t K = brain.size.z;
 	const int32_t IJ = I * J;
 	const int32_t total_neurons = static_cast<int32_t>(brain.neurons.size());
-	std::vector<double> connection_values(static_cast<size_t>(total_neurons), 0.0);
+	std::vector<float> connection_values(static_cast<size_t>(total_neurons), 0.0f);
 
 	for (const NativeNeuron &neuron : brain.neurons) {
 		connection_values[static_cast<size_t>(_spatial_index(neuron.position, I, IJ))] = neuron.connections_value;
@@ -447,7 +451,7 @@ void BrainBuilderNative::_create_connections(NativeBrain &brain, const std::vect
 
 				const Vector3i pos = source_neuron.position;
 				const int32_t source_linear_index = _spatial_index(pos, I, IJ);
-				const double A_ijk = connection_values[static_cast<size_t>(source_linear_index)];
+				const float A_ijk = connection_values[static_cast<size_t>(source_linear_index)];
 				const int32_t target_k_min = std::max(0, pos.z - 2);
 				const int32_t target_k_max = std::min(K - 1, pos.z + 2);
 				std::vector<ConnectionCandidate> candidates;
@@ -463,41 +467,46 @@ void BrainBuilderNative::_create_connections(NativeBrain &brain, const std::vect
 								continue;
 							}
 							const int32_t target_linear_index = u + Iv + IJ * w;
-							const double A_uvw = connection_values[static_cast<size_t>(target_linear_index)];
-							const double h = FunctionsNative::h_value(A_ijk, A_uvw, h_coefficients);
-							if (h > 0.0) {
+							const float A_uvw = connection_values[static_cast<size_t>(target_linear_index)];
+							const float h = FunctionsNative::h_value(A_ijk, A_uvw, h_coefficients);
+							if (h > 0.0f) {
 								candidates.push_back({ target_linear_index, h });
 							}
 						}
 					}
 				}
 
+				const int32_t connection_count = std::min<int32_t>(brain.max_connections, static_cast<int32_t>(candidates.size()));
 				auto comparator = [](const ConnectionCandidate &a, const ConnectionCandidate &b) {
 					return a.value > b.value;
 				};
-				NativeSortArray<ConnectionCandidate, decltype(comparator)> sorter(comparator);
-				sorter.sort(candidates.data(), static_cast<int64_t>(candidates.size()));
-
-				const int32_t connection_count = std::min<int32_t>(brain.max_connections, static_cast<int32_t>(candidates.size()));
+				if (connection_count > 0) {
+					// Consider all candidates, but fully order only the best connection_count.
+					if (static_cast<size_t>(connection_count) < candidates.size()) {
+						std::nth_element(candidates.begin(), candidates.begin() + connection_count, candidates.end(), comparator);
+					}
+					NativeSortArray<ConnectionCandidate, decltype(comparator)> sorter(comparator);
+					sorter.sort(candidates.data(), static_cast<int64_t>(connection_count));
+				}
 				std::vector<NativeConnection> &connections = connection_results[static_cast<size_t>(neuron_index)];
 				connections.resize(static_cast<size_t>(connection_count));
 				for (int32_t index = 0; index < connection_count; ++index) {
 					connections[static_cast<size_t>(index)] = {
 						candidates[static_cast<size_t>(index)].target_spatial_index,
 						candidates[static_cast<size_t>(index)].value,
-						0.0
+						0.0f
 					};
 				}
 			},
 			[&](int32_t completed) {
-				_report_progress(progress_callback, 30 + static_cast<int32_t>(65.0 * static_cast<double>(completed) / static_cast<double>(total_neurons)));
+				_report_progress(progress_callback, 21 + static_cast<int32_t>(54.0f * static_cast<float>(completed) / static_cast<float>(total_neurons)));
 			});
 
 	for (int32_t neuron_index = 0; neuron_index < total_neurons; ++neuron_index) {
 		brain.neurons[static_cast<size_t>(neuron_index)].connections = std::move(connection_results[static_cast<size_t>(neuron_index)]);
 	}
 
-	_report_progress(progress_callback, 95);
+	_report_progress(progress_callback, 75);
 }
 
 bool BrainBuilderNative::_clear_invalid_connections(
@@ -543,7 +552,7 @@ bool BrainBuilderNative::_clear_invalid_connections(
 		source.connections = std::move(valid_connections);
 		_report_progress(
 				progress_callback,
-				95 + static_cast<int32_t>(3.0 * static_cast<double>(neuron_index + 1) / static_cast<double>(total_neurons)));
+				75 + static_cast<int32_t>(4.0f * static_cast<float>(neuron_index + 1) / static_cast<float>(total_neurons)));
 	}
 
 	IsolationCounts before;
@@ -564,7 +573,6 @@ bool BrainBuilderNative::_clear_invalid_connections(
 		}
 	}
 	brain.isolated_before_rescue = before;
-
 	const bool rescue_success = _rescue_isolated_neurons(
 			brain,
 			gene,
@@ -598,21 +606,29 @@ bool BrainBuilderNative::_clear_invalid_connections(
 	}
 	brain.isolated_after_rescue = after;
 
-	const double mean_internal_incoming = internal_neuron_count == 0
-			? 0.0
-			: static_cast<double>(internal_incoming_sum) / static_cast<double>(internal_neuron_count);
-	brain.input_gain = (1.0 + std::sin(FunctionsNative::g_value(true, true, input_influence_gene))) * mean_internal_incoming;
-	const double input_min_weight = 1.0 / (1.0 + brain.input_gain);
+	const float mean_internal_incoming = internal_neuron_count == 0
+			? 0.0f
+			: static_cast<float>(internal_incoming_sum) / static_cast<float>(internal_neuron_count);
+	brain.input_gain = (1.0f + std::sin(FunctionsNative::g_value(true, true, input_influence_gene))) * mean_internal_incoming;
+	const float input_min_weight = 1.0f / (1.0f + brain.input_gain);
 
+	// Attenuate initial synaptic weights only after top-H selection, invalid-connection
+	// filtering, and developmental rescue. This also covers rescued connections.
+	// The same source-dependent factor applies to every outgoing connection.
 	for (NativeNeuron &neuron : brain.neurons) {
-		if (!neuron.input) {
-			continue;
-		}
+		const float source_a = neuron.connections_value;
+		const float attenuation = 1.0f - source_a * source_a;
+
 		for (NativeConnection &connection : neuron.connections) {
-			connection.weight = std::max(connection.weight, input_min_weight);
+			connection.weight *= attenuation;
+			if (neuron.input) {
+				// Preserve the pre-existing lower bound for input synapses.
+				connection.weight = std::max(connection.weight, input_min_weight);
+			}
 		}
 	}
 
+	_report_progress(progress_callback, 83);
 	return rescue_success && after.internal == 0 && after.output == 0 && after.input == 0;
 }
 
@@ -626,7 +642,7 @@ bool BrainBuilderNative::_rescue_isolated_neurons(
 	const int32_t J = brain.size.y;
 	const int32_t K = brain.size.z;
 	const int32_t IJ = I * J;
-	const int32_t rescue_max_connections = static_cast<int32_t>(std::ceil(1.01 * static_cast<double>(brain.max_connections)) + 1.0);
+	const int32_t rescue_max_connections = static_cast<int32_t>(std::ceil(1.01f * static_cast<float>(brain.max_connections)) + 1.0f);
 	const Vector4 h_coefficients = FunctionsNative::h_coefficients_value(gene);
 	std::vector<int32_t> isolated_receivers;
 	bool rescue_success = true;
@@ -649,11 +665,11 @@ bool BrainBuilderNative::_rescue_isolated_neurons(
 		const NativeNeuron &target = brain.neurons[static_cast<size_t>(target_index)];
 		const Vector3i target_position = target.position;
 		const int32_t target_spatial_index = _spatial_index(target_position, I, IJ);
-		const double target_connection_value = target.connections_value;
+		const float target_connection_value = target.connections_value;
 		const int32_t source_k_min = std::max(0, target_position.z - 2);
 		const int32_t source_k_max = std::min(K - 1, target_position.z + 2);
 		int32_t best_source_index = -1;
-		double best_h = 0.0;
+		float best_h = 0.0f;
 		int32_t structural_candidates = 0;
 		int32_t positive_h_candidates = 0;
 		int32_t free_positive_h_candidates = 0;
@@ -678,8 +694,8 @@ bool BrainBuilderNative::_rescue_isolated_neurons(
 					}
 
 					++structural_candidates;
-					const double h = FunctionsNative::h_value(source.connections_value, target_connection_value, h_coefficients);
-					if (h <= 0.0) {
+					const float h = FunctionsNative::h_value(source.connections_value, target_connection_value, h_coefficients);
+					if (h <= 0.0f) {
 						continue;
 					}
 					++positive_h_candidates;
@@ -710,12 +726,12 @@ bool BrainBuilderNative::_rescue_isolated_neurons(
 		brain.neurons[static_cast<size_t>(best_source_index)].connections.push_back({
 			target_spatial_index,
 			best_h,
-			0.0
+			0.0f
 		});
 		incoming_connections[static_cast<size_t>(target_spatial_index)] = 1;
 		_report_progress(
 				progress_callback,
-				98 + static_cast<int32_t>(static_cast<double>(isolated_index + 1) / static_cast<double>(isolated_receiver_count)));
+				79 + static_cast<int32_t>(2.0f * static_cast<float>(isolated_index + 1) / static_cast<float>(isolated_receiver_count)));
 	}
 
 	std::vector<int32_t> isolated_inputs;
@@ -738,12 +754,12 @@ bool BrainBuilderNative::_rescue_isolated_neurons(
 		}
 
 		const Vector3i source_position = source.position;
-		const double source_connection_value = source.connections_value;
+		const float source_connection_value = source.connections_value;
 		const int32_t target_k_min = std::max(0, source_position.z - 2);
 		const int32_t target_k_max = std::min(K - 1, source_position.z + 2);
 		int32_t best_target_index = -1;
 		int32_t best_target_spatial_index = -1;
-		double best_input_h = 0.0;
+		float best_input_h = 0.0f;
 		int32_t structural_targets = 0;
 		int32_t positive_h_targets = 0;
 
@@ -761,8 +777,8 @@ bool BrainBuilderNative::_rescue_isolated_neurons(
 					}
 
 					++structural_targets;
-					const double h = FunctionsNative::h_value(source_connection_value, target.connections_value, h_coefficients);
-					if (h <= 0.0) {
+					const float h = FunctionsNative::h_value(source_connection_value, target.connections_value, h_coefficients);
+					if (h <= 0.0f) {
 						continue;
 					}
 					++positive_h_targets;
@@ -788,27 +804,27 @@ bool BrainBuilderNative::_rescue_isolated_neurons(
 		source.connections.push_back({
 			best_target_spatial_index,
 			best_input_h,
-			0.0
+			0.0f
 		});
 		++incoming_connections[static_cast<size_t>(best_target_spatial_index)];
 		_report_progress(
 				progress_callback,
-				99 + static_cast<int32_t>(static_cast<double>(isolated_index + 1) / static_cast<double>(isolated_input_count)));
+				81 + static_cast<int32_t>(2.0f * static_cast<float>(isolated_index + 1) / static_cast<float>(isolated_input_count)));
 	}
 
 	brain.rescue_failure_causes = failure_causes;
-	_report_progress(progress_callback, 100);
+	_report_progress(progress_callback, 83);
 	return rescue_success;
 }
 
 Vector3 BrainBuilderNative::_modulatory_dynamics(const std::vector<int32_t> &gene) const {
 	return Vector3(
-			1.0 / (1.0 + std::exp(-FunctionsNative::g_value(true, false, gene))),
-			1.0 / (1.0 + std::exp(-FunctionsNative::g_value(false, true, gene))),
-			1.0 / (1.0 + std::exp(-FunctionsNative::g_value(true, true, gene))));
+			1.0f / (1.0f + std::exp(-FunctionsNative::g_value(true, false, gene))),
+			1.0f / (1.0f + std::exp(-FunctionsNative::g_value(false, true, gene))),
+			1.0f / (1.0f + std::exp(-FunctionsNative::g_value(true, true, gene))));
 }
 
-Dictionary BrainBuilderNative::_to_dictionary(const NativeBrain &brain) const {
+Dictionary BrainBuilderNative::_to_dictionary(const NativeBrain &brain, const Callable &progress_callback) const {
 	Dictionary result;
 	result["size"] = brain.size;
 	result["beta"] = brain.beta;
@@ -841,40 +857,86 @@ Dictionary BrainBuilderNative::_to_dictionary(const NativeBrain &brain) const {
 	failure_causes["input_source_saturated"] = brain.rescue_failure_causes.input_source_saturated;
 	result["rescue_failure_causes"] = failure_causes;
 
+	const int64_t neuron_count = static_cast<int64_t>(brain.neurons.size());
 	Array neurons;
-	neurons.resize(static_cast<int64_t>(brain.neurons.size()));
+	neurons.resize(neuron_count);
 	const int32_t I = brain.size.x;
 	const int32_t J = brain.size.y;
 
-	for (int32_t neuron_index = 0; neuron_index < static_cast<int32_t>(brain.neurons.size()); ++neuron_index) {
+	// Cache STRING Variant keys, not StringName keys, to preserve the exact key types
+	// of the previous Dictionary representation without constructing them per field.
+	const Variant position_key("position");
+	const Variant input_key("input");
+	const Variant output_key("output");
+	const Variant activation_threshold_key("activation_threshold");
+	const Variant decay_factor_key("decay_factor");
+	const Variant retention_factor_key("retention_factor");
+	const Variant polarity_factor_key("polarity_factor");
+	const Variant hebbian_plasticity_rate_key("hebbian_plasticity_rate");
+	const Variant modulatory_release_factor_key("modulatory_release_factor");
+	const Variant modulatory_sensitivity_key("modulatory_sensitivity");
+	const Variant modulatory_field_key("modulatory_field");
+	const Variant connections_value_key("connections_value");
+	const Variant connections_key("connections");
+	const Variant target_key("target");
+	const Variant weight_key("weight");
+	const Variant eligibility_trace_key("eligibility_trace");
+
+	// Spatial indices are reused by millions of connections. Compute their
+	// coordinates once, rather than repeating integer division for every edge.
+	std::vector<Vector3i> positions_by_spatial_index(static_cast<size_t>(neuron_count));
+	for (int32_t spatial_index = 0; spatial_index < static_cast<int32_t>(neuron_count); ++spatial_index) {
+		positions_by_spatial_index[static_cast<size_t>(spatial_index)] = _position_from_spatial_index(spatial_index, I, J);
+	}
+
+	// Account for each neuron and connection object exported to Godot.
+	// The percentage therefore continues to advance during serialization.
+	int64_t total_objects = neuron_count;
+	for (const NativeNeuron &neuron : brain.neurons) {
+		total_objects += static_cast<int64_t>(neuron.connections.size());
+	}
+	int64_t exported_objects = 0;
+	int32_t last_export_percent = 83;
+	_report_progress(progress_callback, last_export_percent);
+
+	for (int32_t neuron_index = 0; neuron_index < static_cast<int32_t>(neuron_count); ++neuron_index) {
 		const NativeNeuron &native_neuron = brain.neurons[static_cast<size_t>(neuron_index)];
 		Dictionary neuron;
-		neuron["position"] = native_neuron.position;
-		neuron["input"] = native_neuron.input;
-		neuron["output"] = native_neuron.output;
-		neuron["activation_threshold"] = native_neuron.activation_threshold;
-		neuron["decay_factor"] = native_neuron.decay_factor;
-		neuron["retention_factor"] = native_neuron.retention_factor;
-		neuron["polarity_factor"] = native_neuron.polarity_factor;
-		neuron["hebbian_plasticity_rate"] = native_neuron.hebbian_plasticity_rate;
-		neuron["modulatory_release_factor"] = native_neuron.modulatory_release_factor;
-		neuron["modulatory_sensitivity"] = native_neuron.modulatory_sensitivity;
-		neuron["modulatory_field"] = native_neuron.modulatory_field;
-		neuron["connections_value"] = native_neuron.connections_value;
+		neuron[position_key] = native_neuron.position;
+		neuron[input_key] = native_neuron.input;
+		neuron[output_key] = native_neuron.output;
+		neuron[activation_threshold_key] = native_neuron.activation_threshold;
+		neuron[decay_factor_key] = native_neuron.decay_factor;
+		neuron[retention_factor_key] = native_neuron.retention_factor;
+		neuron[polarity_factor_key] = native_neuron.polarity_factor;
+		neuron[hebbian_plasticity_rate_key] = native_neuron.hebbian_plasticity_rate;
+		neuron[modulatory_release_factor_key] = native_neuron.modulatory_release_factor;
+		neuron[modulatory_sensitivity_key] = native_neuron.modulatory_sensitivity;
+		neuron[modulatory_field_key] = native_neuron.modulatory_field;
+		neuron[connections_value_key] = native_neuron.connections_value;
 
+		const int64_t connection_count = static_cast<int64_t>(native_neuron.connections.size());
 		Array connections;
-		connections.resize(static_cast<int64_t>(native_neuron.connections.size()));
-		for (int32_t connection_index = 0; connection_index < static_cast<int32_t>(native_neuron.connections.size()); ++connection_index) {
+		connections.resize(connection_count);
+		for (int32_t connection_index = 0; connection_index < static_cast<int32_t>(connection_count); ++connection_index) {
 			const NativeConnection &native_connection = native_neuron.connections[static_cast<size_t>(connection_index)];
 			Dictionary connection;
-			connection["target"] = _position_from_spatial_index(native_connection.target_spatial_index, I, J);
-			connection["weight"] = native_connection.weight;
-			connection["eligibility_trace"] = native_connection.eligibility_trace;
+			connection[target_key] = positions_by_spatial_index[static_cast<size_t>(native_connection.target_spatial_index)];
+			connection[weight_key] = native_connection.weight;
+			connection[eligibility_trace_key] = native_connection.eligibility_trace;
 			connections[connection_index] = connection;
 		}
 
-		neuron["connections"] = connections;
+		neuron[connections_key] = connections;
 		neurons[neuron_index] = neuron;
+
+		exported_objects += 1 + connection_count;
+		const int32_t percent = 83 + static_cast<int32_t>(
+				16.0 * static_cast<double>(exported_objects) / static_cast<double>(std::max<int64_t>(total_objects, 1)));
+		if (percent > last_export_percent) {
+			last_export_percent = percent;
+			_report_progress(progress_callback, percent);
+		}
 	}
 
 	result["neurons"] = neurons;

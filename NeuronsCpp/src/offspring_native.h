@@ -38,7 +38,7 @@ private:
 			const std::vector<int32_t> &gene_a,
 			const std::vector<int32_t> &gene_b,
 			std::vector<int32_t> &child_gene);
-	void _mutate_gene(std::vector<int32_t> &gene, double mutation_probability);
+	void _mutate_gene(std::vector<int32_t> &gene, float mutation_probability);
 	bool _read_gene(
 			const Dictionary &data,
 			const char *gene_name,
