@@ -9,6 +9,7 @@ const GENE_NAMES = [
 	&"max_connections",
 	&"beta",
 	&"connections",
+	&"initial_search_region",
 	&"activation_threshold",
 	&"refractory_strength",
 	&"exponential_factor",

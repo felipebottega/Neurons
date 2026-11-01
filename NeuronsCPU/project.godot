@@ -11,15 +11,15 @@ config_version=5
 [application]
 
 config/name="NeuronsCPU"
-run/main_scene="uid://3gppy1pbwtrv"
-config/features=PackedStringArray("4.7", "GL Compatibility")
-boot_splash/bg_color=Color(0.096204825, 0.09620472, 0.09620472, 1)
-config/icon="uid://bud7kd2moc8l2"
+run/main_scene="res://scenes/simulations.tscn"
+config/features=PackedStringArray("4.7", "Forward Plus")
+config/icon="uid://ckha1w2eftvua"
 
 [display]
 
-window/size/viewport_width=1680
-window/size/viewport_height=840
+window/size/viewport_width=1750
+window/size/viewport_height=880
+window/size/mode=2
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
@@ -30,6 +30,4 @@ window/stretch/aspect="expand"
 [rendering]
 
 rendering_device/driver.windows="d3d12"
-renderer/rendering_method="gl_compatibility"
-renderer/rendering_method.mobile="gl_compatibility"
 environment/defaults/default_clear_color=Color(0, 0.36078432, 0, 1)

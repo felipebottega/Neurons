@@ -17,6 +17,7 @@ GenomeNative::GenomeNative() {
 	_random_gene(max_connections, 8);
 	_random_gene(beta, 8);
 	_random_gene(connections, 64);
+	_random_gene(initial_search_region, 64);
 	_random_gene(activation_threshold, 64);
 	_random_gene(refractory_strength, 8);
 	_random_gene(exponential_factor, 8);
@@ -59,6 +60,7 @@ Dictionary GenomeNative::to_dictionary() const {
 	data["max_connections"] = _gene_to_array(max_connections);
 	data["beta"] = _gene_to_array(beta);
 	data["connections"] = _gene_to_array(connections);
+	data["initial_search_region"] = _gene_to_array(initial_search_region);
 	data["activation_threshold"] = _gene_to_array(activation_threshold);
 	data["refractory_strength"] = _gene_to_array(refractory_strength);
 	data["exponential_factor"] = _gene_to_array(exponential_factor);
@@ -80,6 +82,9 @@ Array GenomeNative::get_gene(const StringName &gene_name) const {
 	}
 	if (gene_name == StringName("beta")) {
 		return _gene_to_array(beta);
+	}
+	if (gene_name == StringName("initial_search_region")) {
+		return _gene_to_array(initial_search_region);
 	}
 	if (gene_name == StringName("connections")) {
 		return _gene_to_array(connections);

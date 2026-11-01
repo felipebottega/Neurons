@@ -5,6 +5,7 @@ const GENE_SPECS = {
 	"max_connections": 8,
 	"beta": 8,
 	"connections": 64,
+	"initial_search_region": 64,
 	"activation_threshold": 64,
 	"refractory_strength": 8,
 	"exponential_factor": 8,
@@ -22,6 +23,7 @@ const GENE_SPECS = {
 const GENE_ORDER = [
 	"max_connections",
 	"connections",
+	"initial_search_region",
 	"activation_threshold",
 	"refractory_strength",
 	"exponential_factor",
@@ -40,6 +42,7 @@ const GENE_ORDER = [
 const GENE_FIELD_NAMES = {
 	"max_connections": "LineEdit6",
 	"connections": "LineEdit7",
+	"initial_search_region": "LineEdit21",
 	"activation_threshold": "LineEdit8",
 	"exponential_factor": "LineEdit9",
 	"decay_factor": "LineEdit10",
@@ -60,6 +63,7 @@ const EXTERNAL_PARAMETER_FIELD_NAMES = {
 	"size_x": "LineEdit",
 	"size_y": "LineEdit2",
 	"size_z": "LineEdit3",
+	"connections_density": "LineEdit22",
 	"num_inputs": "LineEdit4",
 	"num_outputs": "LineEdit5"
 }
@@ -179,8 +183,14 @@ func _ready() -> void:
 func _setup_fields() -> void:
 	for parameter_name in EXTERNAL_PARAMETER_FIELD_NAMES:
 		var field: LineEdit = get_node(EXTERNAL_PARAMETER_FIELD_NAMES[parameter_name])
-		field.tooltip_text = field.placeholder_text
-		field.text_changed.connect(_on_external_parameter_changed.bind(field))
+		if parameter_name == "connections_density":
+			field.tooltip_text = "Connections density eta (> 0); 1 restores the original genetic ceiling."
+			if field.text.is_empty():
+				field.text = "1"
+			field.text_changed.connect(_on_connections_density_changed.bind(field))
+		else:
+			field.tooltip_text = field.placeholder_text
+			field.text_changed.connect(_on_external_parameter_changed.bind(field))
 
 	for gene_name in GENE_ORDER:
 		var field: LineEdit = get_node(GENE_FIELD_NAMES[gene_name])
@@ -297,6 +307,8 @@ func _load_genome_from_file(path: String) -> void:
 	var data = JSON.parse_string(file.get_as_text())
 
 	_migrate_legacy_retention_factor_key(data)
+	_migrate_legacy_initial_search_region(data)
+	_migrate_legacy_connections_density(data)
 
 	if not _is_valid_genome_file(data):
 		summary_label.text = "Invalid brain configuration file:\n%s" % path
@@ -333,6 +345,26 @@ func _migrate_legacy_retention_factor_key(data: Variant) -> void:
 		genome_data.erase("memory_factor")
 
 
+## Older brain files did not contain a separate initial-search-region gene.
+## Reuse the existing connections gene deterministically when importing them.
+## New brains randomize and inherit both genes independently.
+func _migrate_legacy_initial_search_region(data: Variant) -> void:
+	if not (data is Dictionary) or not data.has("genome") or not (data["genome"] is Dictionary):
+		return
+	var genes: Dictionary = data["genome"]
+	if not genes.has("initial_search_region") and genes.has("connections"):
+		genes["initial_search_region"] = genes["connections"]
+
+
+## Older brain files predate eta and imply the original density of 1.
+func _migrate_legacy_connections_density(data: Variant) -> void:
+	if not (data is Dictionary) or not data.has("external_parameters") or not (data["external_parameters"] is Dictionary):
+		return
+	var external_parameters: Dictionary = data["external_parameters"]
+	if not external_parameters.has("connections_density"):
+		external_parameters["connections_density"] = "1"
+
+
 ## Returns true when a parsed JSON value contains every valid interface field.
 func _is_valid_genome_file(data: Variant) -> bool:
 	if not (data is Dictionary):
@@ -356,7 +388,10 @@ func _is_valid_genome_file(data: Variant) -> bool:
 		if not (parameter_text is String):
 			return false
 
-		if parameter_text.is_empty() or _filter_characters(parameter_text, "0123456789") != parameter_text:
+		if parameter_name == "connections_density":
+			if not _valid_connections_density(parameter_text):
+				return false
+		elif parameter_text.is_empty() or _filter_characters(parameter_text, "0123456789") != parameter_text:
 			return false
 
 	for gene_name in GENE_ORDER:
@@ -387,6 +422,24 @@ func _is_valid_genome_file(data: Variant) -> bool:
 		return false
 
 	return true
+
+## A positive finite eta scales the ceiling; the article does not impose an upper bound.
+func _valid_connections_density(value: String) -> bool:
+	if not value.is_valid_float():
+		return false
+	var eta := float(value)
+	return not is_nan(eta) and not is_inf(eta) and eta > 0.0
+
+
+## Allows decimals for eta rather than using the integer-only external fields handler.
+func _on_connections_density_changed(new_text: String, field: LineEdit) -> void:
+	var filtered := _filter_characters(new_text, "0123456789.")
+	if filtered != new_text:
+		var caret := field.caret_column
+		field.text = filtered
+		field.caret_column = mini(caret, filtered.length())
+	_validate_form()
+
 
 ## Keeps external parameters restricted to non-negative integers.
 func _on_external_parameter_changed(new_text: String, field: LineEdit) -> void:
@@ -469,6 +522,8 @@ func _validate_form() -> void:
 			valid = false
 		elif num_inputs + num_outputs > size.x * size.y * size.z:
 			valid = false
+		elif not _valid_connections_density($LineEdit22.text):
+			valid = false
 
 	var generating := _is_generating()
 	$GenerateBrain.disabled = not valid or generating
@@ -505,6 +560,7 @@ func _generate_brain() -> void:
 	var size = Vector3i(int($LineEdit.text), int($LineEdit2.text), int($LineEdit3.text))
 	var num_inputs = int($LineEdit4.text)
 	var num_outputs = int($LineEdit5.text)
+	var connections_density: float = float($LineEdit22.text)
 	var genome: GenomeNative = _genome_from_fields()
 	if genome == null:
 		summary_label.text = "Could not create the native genome from the supplied genes."
@@ -523,7 +579,7 @@ func _generate_brain() -> void:
 	$GenerateBrain.disabled = true
 
 	generation_thread = Thread.new()
-	var error = generation_thread.start(_build_brain_thread.bind(genome, size, num_inputs, num_outputs))
+	var error = generation_thread.start(_build_brain_thread.bind(genome, size, num_inputs, num_outputs, connections_density))
 	_validate_form()
 
 	if error != OK:
@@ -533,9 +589,9 @@ func _generate_brain() -> void:
 
 
 ## Worker-thread entry point. It must not access the scene tree or UI nodes.
-func _build_brain_thread(genome: GenomeNative, size: Vector3i, num_inputs: int, num_outputs: int) -> Dictionary:
+func _build_brain_thread(genome: GenomeNative, size: Vector3i, num_inputs: int, num_outputs: int, connections_density: float) -> Dictionary:
 	var builder: BrainBuilderNative = BrainBuilderNative.new()
-	var result := builder.build(genome, size, num_inputs, num_outputs, _set_generation_progress_from_thread)
+	var result := builder.build(genome, size, num_inputs, num_outputs, _set_generation_progress_from_thread, connections_density)
 	return result
 
 
@@ -709,6 +765,11 @@ func _update_summary(brain: Dictionary, elapsed_seconds: float) -> void:
 	var mean_connections = 0 if outgoing_neuron_count == 0 else int(float(outgoing_connection_count) / outgoing_neuron_count)
 	var mean_weight = 0.0 if total_connections == 0 else weight_sum / total_connections
 	var neuron_denominator = max(1, total_neurons)
+	var isolated: Dictionary = brain.get("isolated_before_rescue", {})
+	var rescue_input: int = int(isolated.get("input", 0))
+	var rescue_internal: int = int(isolated.get("internal", 0))
+	var rescue_output: int = int(isolated.get("output", 0))
+	var rescue_evaluations: int = int(brain.get("rescue_candidates_total", 0))
 	var status_text = ""
 
 	if not brain.get("valid", true):
@@ -719,12 +780,16 @@ func _update_summary(brain: Dictionary, elapsed_seconds: float) -> void:
 		status_text
 		+ "Dimensions: %d x %d x %d\n" % [brain["size"].x, brain["size"].y, brain["size"].z]
 		+ "Beta: %.6f\n" % brain["beta"]
+		+ "Connections density eta: %.6f\n" % brain["connections_density"]
 		+ "Neurons: %d\n" % total_neurons
 		+ "Maximum connections per neuron: %d\n" % brain["max_connections"]
 		+ "Input influence psi: %.6f\n" % brain.get("input_gain", 0.0)
 		+ "Existing directional connections: %d\n" % total_connections
+		+ "Initial connections (1st/2nd pass): %d / %d\n" % [brain.get("initial_connections_first_pass", 0), brain.get("initial_connections_second_pass", 0)]
 		+ "Mean outgoing connections: %d\n" % mean_connections
 		+ "Outgoing degree range: %d - %d\n" % [min_out_degree, max_out_degree]
+		+ "Isolated before rescue (input/internal/output): %d / %d / %d\n" % [rescue_input, rescue_internal, rescue_output]
+		+ "Rescue candidates evaluated (H): %d\n" % rescue_evaluations
 		+ "Excitatory neurons: %d (%.2f%%)\n" % [excitatory, 100.0 * excitatory / neuron_denominator]
 		+ "Inhibitory neurons: %d (%.2f%%)\n\n" % [inhibitory, 100.0 * inhibitory / neuron_denominator]
 		+ "Mean activation threshold: %.6f\n" % (threshold_sum / neuron_denominator)

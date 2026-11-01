@@ -26,6 +26,10 @@ func G(delta_1: bool, delta_2: bool, x: Array) -> float:
 	
 	return y
 
+func S(x: Array) -> float:
+	# Relative spatial extent for the first pass of initial connectivity.
+	return clampf((1.0 - sqrt(abs(cos(G(false, true, x))))) / 10.0, 0.0, 0.1)
+
 func Beta(x: Array, I: int, J: int) -> float:
 	var weighted_sum := 0.0
 	var max_sum := 0.0
@@ -38,12 +42,26 @@ func Beta(x: Array, I: int, J: int) -> float:
 
 	return 1.0 + weighted_sum / max_sum * scale
 	
+# Fixed spatial length in lattice steps; keep equal to brain_neurons.glsl.
+# Brain dimensions only bound the sampled domain, not the local field scale.
+const A_SPATIAL_SCALE: float = 16.0
+
 func A(i: int, j: int, k: int, x: Array, I: int, J: int, K: int) -> float:
+	# I, J, K are retained for existing callers. Equal lattice coordinates
+	# produce equal A values regardless of the containing brain dimensions.
 	var p: int = x.size()
 	var n: int = roundi(pow(float(p), 1.0 / 3.0))
-	var a := float(i) / float(I - 1)
-	var b := float(j) / float(J - 1)
-	var c := float(k) / float(K - 1)
+	var a := float(i) / A_SPATIAL_SCALE
+	var b := float(j) / A_SPATIAL_SCALE
+	var c := float(k) / A_SPATIAL_SCALE
+	var basis_a: Array[float] = []
+	var basis_b: Array[float] = []
+	var basis_c: Array[float] = []
+	for mode in n:
+		var frequency := sqrt(float(mode + 1))
+		basis_a.append(cos(PI * frequency * a))
+		basis_b.append(cos(PI * frequency * b))
+		basis_c.append(cos(PI * frequency * c))
 	var y := 0.0
 
 	for r in n:
@@ -51,7 +69,7 @@ func A(i: int, j: int, k: int, x: Array, I: int, J: int, K: int) -> float:
 			for q in n:
 				var t := q + n * s + n * n * r
 				var coefficient := 2.0 * float(x[t]) / 3.0 - 1.0
-				y += coefficient * cos(PI * r * a) * cos(PI * s * b) * cos(PI * q * c)
+				y += coefficient * basis_a[r] * basis_b[s] * basis_c[q]
 
 	return tanh(y / sqrt(float(p)))
 

@@ -5,6 +5,7 @@ const GENE_SPECS = {
 	"max_connections": 8,
 	"beta": 8,
 	"connections": 64,
+	"initial_search_region": 64,
 	"activation_threshold": 64,
 	"refractory_strength": 8,
 	"exponential_factor": 8,
@@ -22,6 +23,7 @@ const GENE_SPECS = {
 const GENE_ORDER = [
 	"max_connections",
 	"connections",
+	"initial_search_region",
 	"activation_threshold",
 	"refractory_strength",
 	"exponential_factor",
@@ -40,6 +42,7 @@ const GENE_ORDER = [
 const GENE_LABELS = {
 	"max_connections": "Maximum connections",
 	"connections": "Connections",
+	"initial_search_region": "Initial search region",
 	"activation_threshold": "Activation threshold",
 	"refractory_strength": "Refractory strength",
 	"exponential_factor": "Exponential factor",
@@ -59,6 +62,7 @@ const EXTERNAL_PARAMETER_NAMES = [
 	"size_x",
 	"size_y",
 	"size_z",
+	"connections_density",
 	"num_inputs",
 	"num_outputs"
 ]
@@ -67,6 +71,7 @@ const EXTERNAL_PARAMETER_LABELS = {
 	"size_x": "Size X",
 	"size_y": "Size Y",
 	"size_z": "Size Z",
+	"connections_density": "Connections density",
 	"num_inputs": "Inputs",
 	"num_outputs": "Outputs"
 }
@@ -286,7 +291,7 @@ func _save_genome_to_file(path: String) -> void:
 		genome_data[gene_name] = _gene_to_text(gene)
 
 	var data := {
-		"format_version": 2,
+		"format_version": 3,
 		"external_parameters": external_parameters,
 		"genome": genome_data
 	}
@@ -313,6 +318,8 @@ func _load_brain_configuration(path: String) -> void:
 	var data = JSON.parse_string(file.get_as_text())
 
 	_migrate_legacy_retention_factor_key(data)
+	_migrate_legacy_initial_search_region(data)
+	_migrate_legacy_connections_density(data)
 
 	if not _is_valid_genome_file(data):
 		summary_label.text = "Invalid brain configuration file:\n%s" % path
@@ -355,6 +362,19 @@ func _migrate_legacy_retention_factor_key(data: Variant) -> void:
 
 
 ## Returns true when the parsed JSON contains every field required by BrainBuilder.
+func _migrate_legacy_initial_search_region(data: Variant) -> void:
+	if not (data is Dictionary) or not data.has("genome") or not (data["genome"] is Dictionary):
+		return
+	var genes: Dictionary = data["genome"]
+	if not genes.has("initial_search_region") and genes.has("connections"):
+		genes["initial_search_region"] = genes["connections"]
+
+func _migrate_legacy_connections_density(data: Variant) -> void:
+	if data is Dictionary and data.has("external_parameters") and data["external_parameters"] is Dictionary:
+		var external: Dictionary = data["external_parameters"]
+		if not external.has("connections_density"):
+			external["connections_density"] = "1"
+
 func _is_valid_genome_file(data: Variant) -> bool:
 	if not (data is Dictionary):
 		return false
@@ -377,7 +397,13 @@ func _is_valid_genome_file(data: Variant) -> bool:
 		if not (parameter_text is String):
 			return false
 
-		if parameter_text.is_empty() or _filter_characters(parameter_text, "0123456789") != parameter_text:
+		if parameter_name == "connections_density":
+			if not parameter_text.is_valid_float():
+				return false
+			var eta := float(parameter_text)
+			if is_nan(eta) or is_inf(eta) or eta <= 0.0:
+				return false
+		elif parameter_text.is_empty() or _filter_characters(parameter_text, "0123456789") != parameter_text:
 			return false
 
 	for gene_name in GENE_ORDER:
@@ -611,7 +637,7 @@ func _generate_offspring() -> void:
 
 	generation_thread = Thread.new()
 	var error := generation_thread.start(
-		_build_brain_thread.bind(current_offspring_genome, size, num_inputs, num_outputs)
+		_build_brain_thread.bind(current_offspring_genome, size, num_inputs, num_outputs, float(external["connections_density"]))
 	)
 	_update_generate_button()
 
@@ -623,9 +649,9 @@ func _generate_offspring() -> void:
 
 
 ## Worker-thread entry point. It must not access the scene tree or UI nodes.
-func _build_brain_thread(genome: GenomeNative, size: Vector3i, num_inputs: int, num_outputs: int) -> Dictionary:
+func _build_brain_thread(genome: GenomeNative, size: Vector3i, num_inputs: int, num_outputs: int, connections_density: float) -> Dictionary:
 	var builder: BrainBuilderNative = BrainBuilderNative.new()
-	return builder.build(genome, size, num_inputs, num_outputs, _set_generation_progress_from_thread)
+	return builder.build(genome, size, num_inputs, num_outputs, _set_generation_progress_from_thread, connections_density)
 
 
 ## Called by BrainBuilderNative from the worker thread. Only shared progress state is touched here.
@@ -755,6 +781,7 @@ func _update_summary(brain: Dictionary, elapsed_seconds: float) -> void:
 		+ "Neurons: %d\n" % total_neurons
 		+ "Maximum connections per neuron: %d\n" % brain["max_connections"]
 		+ "Existing directional connections: %d\n" % total_connections
+		+ "Initial connections (1st/2nd pass): %d / %d\n" % [brain.get("initial_connections_first_pass", 0), brain.get("initial_connections_second_pass", 0)]
 		+ "Mean outgoing connections: %d\n" % mean_connections
 		+ "Outgoing degree range: %d - %d\n" % [min_out_degree, max_out_degree]
 		+ "Excitatory neurons: %d (%.2f%%)\n" % [excitatory, 100.0 * excitatory / neuron_denominator]

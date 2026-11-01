@@ -1,8 +1,8 @@
 [gd_scene format=3 uid="uid://684n0wm3qjdd"]
 
-[ext_resource type="Script" uid="uid://ddxr2v665vwb3" path="res://scripts/brain_offspring.gd" id="1_miv42"]
-[ext_resource type="Script" uid="uid://ddc47eswjmgt1" path="res://scripts/histogram.gd" id="3_r0x27"]
-[ext_resource type="Script" uid="uid://cwyfb7ye11myc" path="res://scripts/heatmap.gd" id="4_cumgd"]
+[ext_resource type="Script" path="res://scripts/brain_offspring.gd" id="1_miv42"]
+[ext_resource type="Script" path="res://scripts/histogram.gd" id="3_r0x27"]
+[ext_resource type="Script" path="res://scripts/heatmap.gd" id="4_cumgd"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_7ag8p"]
 bg_color = Color(0, 0, 0, 1)

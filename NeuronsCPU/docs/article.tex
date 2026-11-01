@@ -1,0 +1,1316 @@
+
+\documentclass[12pt,a4paper]{article}
+\usepackage[english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage[left=2cm, right=2cm, bottom=2.5cm, top=2cm]{geometry}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{array}
+\emergencystretch=2em
+\usepackage{tikz}
+\usetikzlibrary{arrows,positioning,shapes.geometric}
+\usepackage[shortlabels]{enumitem}
+\usepackage[normalem]{ulem}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta, positioning, calc}
+
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\SigmaGen}{\Sigma}
+\newcommand{\id}{\operatorname{id}}
+\newcommand{\UnifInt}{\operatorname{UnifInt}}
+\newcommand{\Bern}{\operatorname{Bern}}
+\newcommand{\card}{\operatorname{card}}
+\newcommand{\clip}{\operatorname{clip}}
+\newcommand{\ind}[1]{\mathbf{1}_{\{#1\}}}
+
+\newcounter{algoritmo}
+\newcommand{\algoritmo}[1]{\refstepcounter{algoritmo}\paragraph{Algorithm \thealgoritmo. #1}}
+
+\tikzset{
+	flowblock/.style={rectangle, rounded corners=2mm, draw=black, thick, align=center, minimum width=3.3cm, minimum height=1cm, fill=gray!10},
+	flowdecision/.style={diamond, draw=black, thick, aspect=2.0, align=center, inner sep=1pt, fill=gray!10, text width=2.7cm},
+	flowline/.style={->, >=stealth, thick},
+	flowsmall/.style={rectangle, rounded corners=1.5mm, draw=black, thick, align=center, minimum width=2.7cm, minimum height=0.8cm, fill=gray!10},
+	tensornode/.style={circle, draw=black, thick, minimum size=4.2mm, inner sep=0pt, fill=white},
+	inputnode/.style={circle, draw=black, thick, minimum size=4.2mm, inner sep=0pt, fill=green!25},
+	outputnode/.style={circle, draw=black, thick, minimum size=4.2mm, inner sep=0pt, fill=red!25},
+	internode/.style={circle, draw=black, thick, minimum size=4.2mm, inner sep=0pt, fill=blue!10},
+	boxnote/.style={rectangle, rounded corners=2mm, draw=black, thick, align=left, fill=gray!8, inner sep=5pt}
+}
+
+\title{\textbf{Artificial Simulation of Neuronal Evolution}}
+\author{F. Bottega}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent This article describes a computational model of digital organisms controlled by evolving artificial brains. Unlike traditional layer-based artificial neural networks, the proposed model represents each brain as a three-dimensional mesh of partially connected neurons, with topology, firing parameters, connectivity regions, and plasticity rules defined by a discrete genome. Selection is not defined by an explicit loss function, it emerges from survival and reproduction. We present the formalization of the genome, the rules of phenotypic generation, the signal propagation dynamics, the plasticity of connections, the recombination mechanism through offspring, and the implementation methodology in Godot. To allow lifetime learning without introducing a task-specific reward channel, the model is extended with a minimal endogenous modulatory field and synaptic eligibility traces whose organization is itself genetically determined.
+
+\medskip
+\noindent \textbf{Keywords:} neuroevolution, genetic algorithms, artificial agents, neuronal plasticity, agent-based simulation, complex systems, endogenous modulation, meta-learning.
+\end{abstract}
+
+\section{Introduction}
+
+	In this work, each gene is a finite sequence composed of the numbers 0, 1, 2, 3 (representing the A, T, C, G in genetics). The notion of similarity between two genes is given by the $L^1$ distance, which is the absolute difference between corresponding digits in the sequence. For example, if $x = 12301$ and $y = 32101$, then 
+	$$d(x, y) = |1-3| + |2-2| + |3-1| + |0-0| + |1-1| = 4.$$ 
+	
+	Similar genes will produce similar brain features in our model. Although we will never compare genes of different lengths, we extend the definition of $d$ to consider these cases. If the lengths of $x$ and $y$ are different, we append zeroes to the right of the shorter gene until they have the same length.
+	
+	Each brain is a 3D tensor with dimensions $I, J, K \geq 2$. These dimensions are defined outside the simulations. This means we must test the evolution of many brain sizes in order to find the best ones. 
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=1.8]{figures/slices}
+		\caption{\footnotesize{Structure of slices in the model.}}
+	\end{figure}
+	
+	The neuronal signals used in this model should not be interpreted as the amplitude of individual biological action potentials. Biological spikes are essentially all-or-none events, while information can be represented by their frequency and temporal distribution. Instead, the continuous signal produced by a neuron in our model may be interpreted as an aggregate measure of neural activity over a short temporal interval, analogous to averaging the firing activity of biological neurons within a given sampling window. Thus, a large signal corresponds to intense activity during that interval, whereas a small or zero signal corresponds to weak or absent activity. This abstraction preserves a meaningful relation with biological firing-rate dynamics without requiring the explicit simulation of individual spikes, which would substantially increase the computational cost of the model.
+	
+	\subsection{Support Functions}
+	
+	To model how a gene $x = x_0 \ldots x_{p-1}$ generates a brain feature, we use functions of the form
+	\begin{equation}
+		\Phi(x) = \sum_{t=0}^{p-1} W(t) \cdot U(x_t),
+	\label{Phi}
+	\end{equation}
+where $W(t)$ are the \emph{weights} of the function and $U(x_t)$ models how each digit of the gene acts on that feature. In this work, a few specific chosen $W$ and $U$ are used. However, in future work it is possible to test other families of functions or even allow these families to be genetically determined. What we need most from this model is for it to meet the following conditions:
+
+	\begin{enumerate}
+		\item The feature function is continuous over the real numbers.
+		\item Genes that are nearby (according to the $L^1$ metric) usually exhibit similar features.
+		\item In some cases, changing a single digit can have a significant impact.
+	\end{enumerate}
+
+The equations of this model can be combined with one another to obtain different distributions, depending on the objective at hand.	 Now we will discuss the specific functions chosen for our model.
+	
+	Whenever we want a brain parameter ranging in some interval, we will be changing the length $p$ of the gene and the base $\beta > 0$ in the equation
+	\begin{equation}
+		F_\beta(x) = \sum_{t=0}^{p-1} \sqrt{1 + t} \cdot \beta^{x_t}.
+	\label{F}
+	\end{equation}
+	
+	Weighting the individual values by $\sqrt{1 + t}$ is nothing special. The intention is to give positional weight to the gene digits. In particular, the positions of a gene are not required to have the same phenotypic influence. Since $\sqrt{1+t}$ increases with $t$, later digits have a larger contribution to the scalar parameters defined through this family. This positional hierarchy is intentional and was verified numerically to provide useful variation without making the mapping excessively irregular.
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.7]{figures/distribution_p8}
+		\caption{\footnotesize{Distribution of $F_\beta$ for $p=8$ fixed and $\beta \in \{ 0.4,\ 0.9,\ 2,\ 4 \}$. To generate the genes, each digit was drawn from the uniform distribution over $\{ 0, 1, 2, 3 \}$.}}
+	\end{figure}
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.7]{figures/distribution_p64}
+		\caption{\footnotesize{Distribution of $F_\beta$ for $p=64$ fixed and $\beta \in \{ 0.4,\ 0.9,\ 2,\ 4 \}$. To generate the genes, each digit was drawn from the uniform distribution over $\{ 0, 1, 2, 3 \}$.}}
+	\end{figure}
+	
+	We are also interested in knowing how nearby genes are mapped to nearby values by the defined mapping. For a fixed distance $\alpha \geq 0$ we have a level set $\{(x, y): d(x, y) = \alpha\}$. We may regard this level set as the set of genes with the same degree of similarity. The relative difference $\frac{|F_\beta(x) - F_\beta(y)|}{F_\beta(x)}$ in this level set can vary, with this variance increasing with the distance. Below, we show the distributions of these differences for each level set. 
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.68]{figures/F_distribution_b04_p8}
+		\caption{\footnotesize{Box plot distribution of the relative differences $\frac{|F_\beta(x) - F_\beta(y)|}{F_\beta(x)}$ for $\beta = 0.4$ and $8$ digits per gene. To generate the genes, each digit was drawn from the uniform distribution over $\{ 0, 1, 2, 3 \}$.}}
+	\end{figure}
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.68]{figures/F_distribution_b04_p64}
+		\caption{\footnotesize{Box plot distribution of the relative differences $\frac{|F_\beta(x) - F_\beta(y)|}{F_\beta(x)}$ for $\beta = 0.4$ and $64$ digits per gene. The first plot above is a zoomed-in view limited to $d(x, y) = 50$ for better visualization. The second plot covers the entire range obtained from the samples. To generate the genes, each digit was drawn from the uniform distribution over $\{ 0, 1, 2, 3 \}$.}}
+	\end{figure}
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.68]{figures/F_distribution_b4_p8}
+		\caption{\footnotesize{Box plot distribution of the relative differences $\frac{|F_\beta(x) - F_\beta(y)|}{F_\beta(x)}$ for $\beta = 4$ and $8$ digits per gene. To generate the genes, each digit was drawn from the uniform distribution over $\{ 0, 1, 2, 3 \}$.}}
+	\end{figure}
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.68]{figures/F_distribution_b4_p64}
+		\caption{\footnotesize{Box plot distribution of the relative differences $\frac{|F_\beta(x) - F_\beta(y)|}{F_\beta(x)}$ for $\beta = 4$ and $64$ digits per gene. The first plot above is a zoomed-in view limited to $d(x, y) = 50$ for better visualization. The second plot covers the entire range obtained from the samples. To generate the genes, each digit was drawn from the uniform distribution over $\{ 0, 1, 2, 3 \}$.}}
+	\end{figure}
+	
+	Although increasing $p$ adds more terms to the sum, it also makes the total value more stable. The expected value of $F_\beta(x)$ grows approximately as $p^{3/2}$, while its typical fluctuations grow only as $p$. As a result, the relative variability scales roughly as $1/\sqrt{p}$. Therefore, larger values of $p$ tend to produce smaller relative differences $|F_\beta(x)-F_\beta(y)|/F_\beta(x)$, even though the absolute differences may increase.
+	
+	As explained, equation~\ref{F} may be regarded as a weighted sum. Another type of weighted sum is given by equation
+	\begin{equation}
+		G_{\delta_1, \delta_2}(x) = \sum_{t=0}^{p-1} \sin(1 + t) \sin(1 + x_t)^{\delta_1} \cos(1 + x_t)^{\delta_2}.	
+	\label{G}
+	\end{equation}
+	
+	The weights in this equation are the terms $\sin(1 + t)$. Furthermore, in this definition we have that $\delta_i \in \{ 0, 1 \}$, with $\delta_1 + \delta_2 > 0$. Each choice gives a different kind of weighted sum. 
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.75]{figures/G_distribution_p8}
+		\caption{\footnotesize{Distribution of $G_{\delta_1, \delta_2}$ for $8$ digits per gene. To generate the genes, each digit was drawn from the uniform distribution over $\{ 0, 1, 2, 3 \}$.}}
+	\end{figure}
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.75]{figures/G_distribution_p64}
+		\caption{\footnotesize{Distribution of $G_{\delta_1, \delta_2}$ for $64$ digits per gene. To generate the genes, each digit was drawn from the uniform distribution over $\{ 0, 1, 2, 3 \}$.}}
+	\end{figure}
+	
+	Let $(I,J,K)$ denote the dimensions of the brain and $(i,j,k)$ an integer lattice position, with $0\leq i<I$, $0\leq j<J$, and $0\leq k<K$. The spatial coordinates used by the genetic field are
+
+	$$a=\frac{i}{L},\qquad b=\frac{j}{L},\qquad c=\frac{k}{L},\qquad L=16.$$
+
+	The length $L$ is a fixed external spatial scale (in lattice steps), shared by the three axes and independent of the brain dimensions. Unlike normalization by $I-1$, $J-1$, and $K-1$, this choice keeps the local spatial sampling scale unchanged as the brain grows. In particular, the same genome produces exactly the same mathematical field value at any lattice coordinate contained in two differently sized brains. Increasing the dimensions extends the sampled domain instead of refining a fixed unit cube; this is the intended spatial ``zoom-out'' behavior. The precise scale $L=16$ is a modeling choice and is not inferred from biological data.
+
+	Let the gene be	$x = x_0 \ldots x_{p-1}$ and assume that $p=n^3$. The correspondence between the gene index and the spatial mode is
+
+	$$t=q+ns+n^2r.$$
+
+	Each digit of the gene is mapped to a scalar coefficient in $[-1,1]$ according to
+
+	$$\alpha(x_t)=\frac{2x_t}{3}-1.$$
+
+	Therefore,
+
+	$$0\mapsto-1,\qquad 1\mapsto-\frac{1}{3},\qquad 2\mapsto\frac{1}{3},\qquad 3\mapsto1.$$
+
+	To avoid a common period imposed by integer spatial frequencies, we use the fixed mode frequencies
+
+	$$\omega_r=\sqrt{r+1},\qquad r=0,\ldots,n-1.$$
+
+	The scalar field is defined by
+
+	\begin{equation}
+	A_{i,j,k}(x)=\tanh\left(\frac{1}{\sqrt{p}}\sum_{r=0}^{n-1}\sum_{s=0}^{n-1}\sum_{q=0}^{n-1}\alpha\!\left(x_{q+ns+n^2r}\right)\cos(\pi\omega_r a)\cos(\pi\omega_s b)\cos(\pi\omega_q c)\right).
+	\label{A}
+	\end{equation}
+
+	For the implemented 64-digit spatial genes, $n=4$ and the frequencies are $1,\sqrt{2},\sqrt{3},2$. Their irrational ratios prevent a common nonzero spatial period for a generic field in which the corresponding modes remain present. They do not rule out special degenerate combinations of coefficients, nor do they preclude arbitrarily close approximate recurrences: a finite sum of incommensurate trigonometric modes is almost periodic. The cosine basis still has reflection symmetry about the coordinate origin. Accordingly, the formulation permits spatial variation over larger brains without promising an unlimited number of distinct regions or automatic functional specialization.
+	
+	The factor $1/\sqrt{p}$ keeps the typical scale of the field approximately stable as the number of modes changes. Since the coefficients $\alpha(x_t)$ are centered around zero, the unnormalized sum exhibits cancellations and its typical magnitude grows on the order of $\sqrt{p}$ rather than $p$.
+	
+	The correspondence $t=q+ns+n^2r$ assigns each gene position to a unique spatial mode. Any mixing of spatial positions is therefore produced by the field itself rather than by an index collision. Gene positions are not intended to be phenotypically equivalent: their influence depends on the spatial mode $(q,s,r)$ rather than on an explicit increasing weight. Lower-frequency modes vary more broadly in space, whereas higher-frequency modes introduce finer variation. In contrast with the preceding integer-frequency formulation, $t=0$ is no longer a constant mode: it is the lowest-frequency product $\cos(\pi a)\cos(\pi b)\cos(\pi c)$. Every mode is position dependent, although all cosine factors equal one at the origin. Consequently, changes in a single digit can affect different regions differently, and the baseline $A_{0,0,0}(x)$ remains well defined for the polarity rule below. Changing the dimensions can also change the distribution of excitation and inhibition, since a larger domain samples additional values relative to this fixed baseline.
+	
+	Another useful auxiliary is the following.
+	
+	\begin{equation}
+		H_{i,j,k}(u, v, w, x) = \sin\left( \frac{3\pi}{8} + \frac{4}{C} \sum_{t=0}^{p-1} \sqrt{1 + t} \cdot \Big( \sin \big( A_{i, j, k}(x) \cdot U(x_t) \big) + \cos \big( A_{u, v, w}(x) \cdot U(x_t) \big) \Big) \right) ,
+	\label{H}
+	\end{equation}
+	
+where $$C = \sum_{t=0}^{p-1} \sqrt{1 + t}.$$ 
+			
+	
+	Unlike the spatial-mode expansion defining $A$, the same two values $A_{i,j,k}(x)$ and $A_{u,v,w}(x)$ are reused in every term of this sum. The normalization factor $4/C$, with $C$ equal to the total positional weight, controls the scale of the weighted sum as the gene length changes. The outer shift is $3\pi/8$. 
+	
+	This function is used when it is necessary to relate two distinct neurons through some value.
+	
+\section{Description}
+
+We begin giving a list of items to describe our model of genetics and corresponding brain.
+
+\begin{enumerate}			
+	\item The maximum number $N_{max}$ of outgoing connections assigned to any neuron during the initial generation of the brain is a global value of the brain. It is defined by the gene $x = x_0 \ldots x_{7}$ through the formula
+
+	$$N_{max}(x) = \max \left\{ 1, \ \lfloor \eta \cdot F_\beta(x) \rfloor \right\} = \max \left\{1, \left\lfloor \eta \cdot \sum_{t=0}^{7} \sqrt{1 + t} \cdot \beta^{x_t} \right\rfloor \right\}.$$
+	
+	The value $\eta > 0$ is an external parameters defined outside of the simulation. It is called the \emph{connections density}. The original model was design without this value (in other words, with $\eta = 1$), but later it was introduced so we can have a finer control over the overall amount of connections per neuron.
+
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.7]{figures/N_max_2}
+		\caption{\footnotesize{Distribution of $N_{max}$ for $\eta = 1$ and $\beta = 4$. The horizontal axis shows the possible values of $N_{max}$, and the vertical axis gives their respective frequencies.}}
+	\end{figure}
+
+	This definition of $N_{max}$ depends on the value of $\beta$. Below, we show the highest value of $N_{max}$ for a few choices of $\beta$, with $\eta = 1$.
+
+	\begin{center}
+	\begin{tabular}{|c|c|}
+		\hline
+		$\beta$ & $\displaystyle{\max_x N_{max}(x)}$\\
+		\hline
+		1 & 16\\
+		\hline
+		2 & 130\\
+		\hline
+		4 & 1043\\
+		\hline
+		8 & 8348\\
+		\hline
+	\end{tabular}
+	\end{center}
+
+	For $\beta \geq 1$, the highest value of $N_{max}$ is approximately $16 \cdot \beta^3$. In practice, we want this maximum to be on the scale of $IJ$, meaning that the connection ceiling is comparable to approximately one entire slice. We therefore use $\sqrt[3]{IJ/16}$ as the reference scale for $\beta$.
+
+	The value of $\beta$ is genetically determined. The gene $y = y_0 \ldots y_7$ defines $\beta$ through the formula
+
+	$$\beta(y) = 1 + \frac{\displaystyle \sum_{t=0}^{7} \sqrt{1 + t} \cdot y_t}{3 \displaystyle \sum_{t=0}^{7} \sqrt{1 + t}} \cdot \sqrt[3]{\frac{IJ}{16}}.$$
+
+	The fraction normalizes the weighted gene value to the interval $[0,1]$. Therefore, the gene $00000000$ produces $\beta = 1$, while $33333333$ produces the maximum value $\beta_{\max} = 1 + \sqrt[3]{IJ/16}$. Intermediate genes produce intermediate values of $\beta$, with the contribution of each position weighted by $W(t)=\sqrt{1+t}$. The resulting ceiling may be somewhat larger than $IJ$ at the upper end of the range, which is acceptable because $N_{max}$ is only an upper bound on the number of connections assigned during the initial generation of the brain, not a prescribed number of connections. It does not impose a limit on connections created later by the lifetime dynamics. This makes the mapping from the gene to $\beta$ monotonic and directly interpretable.
+	
+	\item Let $n(i,j,k)$ denote the neuron at position $(i,j,k)$, with $0\leq i<I$, $0\leq j<J$, and $0\leq k<K$. The region of the initial search for connections is genetically determined. We introduce the \emph{initial search region gene} $y=y_0\ldots y_{63}$. Now let
+	\begin{equation}
+		S(y)=\frac{1-\sqrt{|\cos(G_{0,1}(y))|}}{10}.
+		\label{initial_connection_extent}
+	\end{equation}
+	
+	Since $|\cos(s)|\in[0,1]$, we have $S(y)\in[0,0.1]$. This coefficient determines the maximum search radius in each of the three spatial dimensions, relative to the corresponding tensor dimension.
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.98]{figures/S_distribution}
+		\caption{\footnotesize{Distribution of $S(y)$. To generate the genes, each digit was drawn from the uniform distribution over $\{ 0, 1, 2, 3 \}$.}}
+	\end{figure}
+	
+	For a source neuron $n(i,j,k)$, the set of candidate targets for the first pass of ordinary initial construction is
+	\begin{equation}
+	\begin{split}
+	\mathcal{V}_{\mathrm{init}}(i,j,k,y)=\big\{(u,v,w):\;&0\leq u<I,\ 0\leq v<J,\ 0\leq w<K,\\
+	&|u-i|\leq \lceil S(y) \cdot I\rceil,\\ 
+	&|v-j|\leq \lceil S(y) \cdot J\rceil,\\
+	&|w-k|\leq \lceil S(y) \cdot K\rceil,\quad (u,v,w)\neq(i,j,k)\big\}.
+	\end{split}
+	\label{initial_connection_neighborhood}
+	\end{equation}
+	
+	Thus, the search covers a rectangular neighborhood centered at $n(i,j,k)$, truncated at the tensor boundaries. This rectangular restriction governs the first pass of the \emph{initial} connection search. It does not modify the spatial region available to structural plasticity during the brain's lifetime.
+
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.3]{figures/connections}
+		\caption{\footnotesize{Region of possible connections for a single neuron.}}
+	\end{figure}
+
+	\item The gene that determines the initial connections is a sequence of the form $x = x_0 \ldots x_{63}$, which we will call the \emph{connections gene}. For each neuron $n(i, j, k)$, a scalar activation field is evaluated for candidate targets in $\mathcal{V}_{\mathrm{init}}(i,j,k,y)$, where $y$ denotes the \emph{initial search region gene} defined above. For all neurons $n(u, v, w)$ in this region, we consider the value
+	$$H_{i, j, k}(u, v, w, x).$$
+	
+	The two genes have distinct functions: $y$ specifies which targets are examined, whereas the connections gene $x$ determines the value of $H$ for each candidate. We consider that $n(i,j,k)$ and $n(u,v,w)$ are connected if 
+	$$H_{i, j, k}(u, v, w, x) > 0.$$
+	
+	If more than $N_{max}$ candidates satisfy this condition, they are ordered by their values of $H$ and only the $N_{max}$ largest values are retained. Thus, $N_{max}$ acts as an upper bound on the outgoing degree during the initial generation of the brain rather than as a prescribed number of connections.
+
+	\item If fewer than $N_{max}$ outgoing connections have been retained after this local pass, a second, bounded search for additional initial connections is performed. It uses the same initial search region gene $y=y_0\ldots y_{63}$, but examines targets outside the local neighborhood in Equation~\ref{initial_connection_neighborhood}. The search is deterministic and does not introduce any random choice.
+
+	To construct candidate offsets, divide $y$ into three blocks $(y_0,\ldots,y_{20})$, $(y_{21},\ldots,y_{41})$, and $(y_{42},\ldots,y_{62})$. The final digit $y_{63}$ is not used in these offsets, but it still contributes to $S(y)$ through Equation~\ref{initial_connection_extent}. Let
+	\begin{equation}
+	\mathcal{Q}=\big\{(q_1,q_2,q_3,q_4):0\leq q_1<q_2<q_3<q_4<21\big\},
+	\qquad |\mathcal{Q}|=\binom{21}{4}=5985.
+	\label{additional_connection_combinations}
+	\end{equation}
+	
+	Each ordered quadruple selects four positions in each block, retaining their relative order. The quadruples are visited in a fixed cyclic ordering. For $q\in\mathcal{Q}$, define the rotation
+	\begin{equation}
+	R_h(q)=\operatorname{sort}\!\left((q_1+h)\bmod21,\ldots,(q_4+h)\bmod21\right),
+	\qquad h=0,\ldots,20.
+	\label{additional_connection_rotation}
+	\end{equation}
+	
+	The ordering begins with the 21 rotations of $(0,5,10,15)$, taken for $h=0,\ldots,20$. The remaining rotation orbits are visited by their lexicographically smallest representatives, in increasing lexicographic order, skipping the orbit already used. Within each orbit, the rotations are again visited for $h=0,\ldots,20$. Each orbit has 21 distinct quadruples, so the procedure visits all $5985$ quadruples exactly once. 
+
+	Let $q^{(t)}=(q_{t,1},q_{t,2},q_{t,3},q_{t,4})$ be the quadruple at position $t$, starting with $t=0$. Form three four-digit \emph{decimal} numbers from the corresponding positions in the three blocks:
+	\begin{equation}
+	\begin{aligned}
+	 s_t^{(i)}&=\sum_{\ell=1}^{4}10^{4-\ell}\,y_{q_{t,\ell}},\\
+	 s_t^{(j)}&=\sum_{\ell=1}^{4}10^{4-\ell}\,y_{21+q_{t,\ell}},\\
+	 s_t^{(k)}&=\sum_{\ell=1}^{4}10^{4-\ell}\,y_{42+q_{t,\ell}}.
+	\end{aligned}
+	\label{additional_connection_decimal_numbers}
+	\end{equation}
+	
+	Leading zeros are allowed. For example, $0123$ represents the decimal number $123$. The unsigned offsets are then
+	\begin{equation}
+	(a_t,b_t,c_t)=\big(s_t^{(i)}\bmod I,\ s_t^{(j)}\bmod J,\ s_t^{(k)}\bmod K\big).
+	\label{additional_connection_raw_offsets}
+	\end{equation}
+
+	The offsets are shifted so that the second pass examines only displacements outside the three-dimensional local neighborhood. Define
+	\begin{equation}
+	\begin{aligned}
+	 r_i&=\lceil S(y)I\rceil, &D_i&=I-r_i-1,\\
+	 r_j&=\lceil S(y)J\rceil, &D_j&=J-r_j-1,\\
+	 r_k&=\lceil S(y)K\rceil, &D_k&=K-r_k-1.
+	\end{aligned}
+	\label{additional_connection_radii}
+	\end{equation}
+
+	For each axis with positive $D$, define a candidate displacement whose corresponding component necessarily exceeds the local search radius:
+	\begin{equation}
+	\begin{aligned}
+	 d_t^{(i)}&=\big(r_i+1+(a_t\bmod D_i),\ b_t,\ c_t\big), &&D_i>0,\\
+	 d_t^{(j)}&=\big(a_t,\ r_j+1+(b_t\bmod D_j),\ c_t\big), &&D_j>0,\\
+	 d_t^{(k)}&=\big(a_t,\ b_t,\ r_k+1+(c_t\bmod D_k)\big), &&D_k>0.
+	\end{aligned}
+	\label{additional_connection_shifted_offsets}
+	\end{equation}
+
+	The preferred axis cycles through $i$, $j$, and $k$ according to $t\bmod 3$. If the displacement for that axis is unavailable because the corresponding $D$ is nonpositive, the next available axis in the same cyclic order is used. If all three are unavailable, no displacement can leave the local neighborhood while remaining within the dimensions of the tensor, and the second pass terminates. Denote the selected displacement by $d_t=(\widehat a_t,\widehat b_t,\widehat c_t)$. At least one of $\widehat a_t>r_i$, $\widehat b_t>r_j$, or $\widehat c_t>r_k$ holds, ensuring that every resulting valid target lies outside the neighborhood already searched. This construction allows the complementary search to reach any of the three dimensions rather than privileging only the first two.
+
+	For each $d_t$, the eight signed displacements are examined in the following fixed order:
+	\begin{equation}
+	\begin{gathered}
+	(+\widehat a_t,+\widehat b_t,+\widehat c_t),\quad(+\widehat a_t,+\widehat b_t,-\widehat c_t),\\
+	(+\widehat a_t,-\widehat b_t,+\widehat c_t),\quad(+\widehat a_t,-\widehat b_t,-\widehat c_t),\\
+	(-\widehat a_t,+\widehat b_t,+\widehat c_t),\quad(-\widehat a_t,+\widehat b_t,-\widehat c_t),\\
+	(-\widehat a_t,-\widehat b_t,+\widehat c_t),\quad(-\widehat a_t,-\widehat b_t,-\widehat c_t).
+	\end{gathered}
+	\label{additional_connection_signs}
+	\end{equation}
+	
+	A displacement is applied to the source position $(i,j,k)$. A new outgoing connection is created only if the resulting target is inside the tensor, is not the source itself, is not already connected to the source, and satisfies $H_{i,j,k}(u,v,w,x)>0$ for the \emph{connections gene} $x$. As in the first pass, the subsequent input/output restrictions still apply. No fixed bound of two slices is imposed on the initial connections: the depth displacement can reach any valid slice. Zero components or collisions after the modulo operations may produce repeated targets; these are simply rejected.
+
+	The second pass stops as soon as the source has $N_{max}$ outgoing connections, after at most $N_{max}$ \emph{individual candidate tests}, or when the finite sequence of quadruples is exhausted, whichever occurs first. Each signed displacement tested counts toward this budget, including invalid and duplicate targets. Processing may therefore stop before all eight signs of a quadruple have been examined. Accepted connections are added in the prescribed order, without a further ranking pass. The maximum number of candidate tests in this second pass, over all neurons of one brain, is consequently $IJKN_{max}$, excluding the separate work of the local pass. This bounded search is part of initial construction and does not change the separately defined spatial rules for homeostatic reconnection and structural plasticity during the brain's lifetime.
+	
+	\item Each brain has a fixed number of neurons to receive inputs (external or internal signals supplied through the agent interface) and another fixed number of neurons to send outputs (actions on the environment or on the agent itself). Both of these numbers are determined outside the simulation. The input and output neurons form two distinct sets, that is, no neuron can be an input and output at the same time. 
+	
+	Let $\mathcal{N}_{in}$ be the set of neuron inputs, $\mathcal{N}_{out}$ be the set of neuron outputs, and $\mathcal{N}_{int}$ be the set of interior neurons (not input and not output). To distribute input and output neurons more evenly across the brain, each slice $k$ is ordered independently according to $A_{i,j,k}(x)$, with the connections gene $x$ used in the procedure described above. Each value $A_{i,j,k}(x)$ is the \emph{connection energy} of the neuron $n(i, j, k)$.
+
+	Let
+	$$
+	a_{k,1}\leq a_{k,2}\leq\cdots\leq a_{k,IJ}
+	$$
+	denote the neurons of slice $k$ sorted by increasing connection energy. The final ordering is obtained by interleaving equal ranks from consecutive slices:
+	$$
+	a_{0,1},a_{1,1},\ldots,a_{K-1,1},
+	a_{0,2},a_{1,2},\ldots,a_{K-1,2},
+	\ldots,
+	a_{0,IJ},\ldots,a_{K-1,IJ}.
+	$$
+
+	The first neurons in this ordering are assigned as inputs and the last ones as outputs. Thus, low and high energy neurons are selected across different slices before taking additional neurons from the same slice.
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.3]{figures/ordering}
+		\caption{\footnotesize{How the ordering works.}}
+	\end{figure}
+	
+	\item We require that input neurons send neural connections only to internal neurons and receive no neural connections from other neurons. Output neurons, conversely, receive neural connections only from internal neurons and do not send neural connections to other neurons. Thus, inputs and outputs can interact with the neural network only through internal neurons, and no direct input--input, input--output, or output--output connection is allowed.\footnote{Any input signal must be processed internally before reaching an output neuron.} Therefore, a subroutine is executed to clear any invalid connections. 	
+	
+	\item After the initial connections are created and invalid input/output connections are removed, some neurons may remain isolated with respect to the connectivity required by their role. Instead of immediately considering the brain invalid, a minimal \emph{developmental rescue} procedure is applied. Unlike ordinary initial connectivity, this exceptional procedure examines only the immediately adjacent neurons and uses the squared connection affinity $H^2$, allowing a strongly negative value of $H$ to be considered alongside a strongly positive one.
+
+	For a neuron at $(i,j,k)$, let
+	$$\mathcal{V}(i,j,k)=\left\{(u,v,w): |u-i|+|v-j|+|w-k|=1\right\},$$
+	where only positions inside the brain mesh are retained. Thus, each neuron has at most six eligible spatial neighbors. The same orthogonal neighborhood is used later for the local modulatory field (Figure~\ref{fig:local_neighborhood}). Given a neuron $n$, let $\mathcal{I}(n)$ and $\mathcal{O}(n)$ denote its numbers of incoming and outgoing connections, respectively.
+
+	\begin{itemize}
+		\item For every internal or output neuron $n(u,v,w)$ such that $\mathcal{I}(n(u,v,w))=0$, candidate sources $n(i,j,k)$ are restricted to $\mathcal{V}(u,v,w)$. A candidate must satisfy
+		$$H_{i,j,k}(u,v,w,x)^2>0$$
+		and have available outgoing capacity under the slightly relaxed rescue limit,
+		$$\mathcal{O}(n(i,j,k))<\lceil 1.01\cdot N_{\max}\rceil+1.$$
+		If the isolated target is internal, its source may be either an internal or an input neuron; if the target is an output neuron, its source must be internal. Among all candidates satisfying these requirements, the source maximizing $H_{i,j,k}(u,v,w,x)^2$ is selected, and a new incoming connection is created.
+
+		\item For every input neuron $n(i,j,k)$ such that $\mathcal{O}(n(i,j,k))=0$, candidate targets $n(u,v,w)$ are restricted to $\mathcal{V}(i,j,k)$ and must be internal neurons. Among those satisfying $H_{i,j,k}(u,v,w,x)^2>0$, the target maximizing $H_{i,j,k}(u,v,w,x)^2$ is selected, and a new outgoing connection is created. The input neuron remains subject to the same relaxed outgoing limit $\lceil 1.01\cdot N_{\max}\rceil+1$.
+	\end{itemize}
+
+	The initial weight of a rescued connection is obtained by applying the source-dependent attenuation to $H^2$ and enforcing the minimum initial weight of $0.1$, as specified in Equation~\ref{rescue_synaptic_weight} below. Consequently, no connection is created with zero initial weight. Only one connection is added for each neuron requiring rescue: one incoming connection for an isolated internal or output neuron, or one outgoing connection for an isolated input neuron. No existing connection is removed or redirected. If no neighboring candidate satisfies the positive-square condition, the input/output restrictions, and the relaxed outgoing capacity limit, brain construction fails.
+
+	This rule preserves a genetic influence on the choice of the new connection without imposing the ordinary requirement $H>0$ on the emergency repair. Its search is local and limited to at most six neighboring positions, while the ordinary initial connectivity procedure first uses the genetically bounded region in Equation~\ref{initial_connection_neighborhood} and then, if needed, the additional candidate search defined above. The rescue does not guarantee that every initially isolated neuron can be connected; configurations without an admissible local candidate are still rejected.
+
+	\item Consider that all initial neural connections have been established, including those added by developmental rescue. In the following expressions, $x$ denotes specifically the \emph{connections gene} used to compute $H$ and the corresponding connection field $A$, not the gene associated with any other neuronal parameter. Let $w_{i,j,k}^{u,v,w}\in[0,1]$ denote the weight of a directional connection from $n(i,j,k)$ to $n(u,v,w)$. For a connection established by the ordinary initial connectivity procedure, its weight, before enforcing the input-specific lower bound described later, is
+	\begin{equation}
+		w_{i,j,k}^{u,v,w}=\max\!\left\{\left(1-A_{i,j,k}(x)^2\right)H_{i,j,k}(u,v,w,x),\,0.1\right\}.
+		\label{initial_synaptic_weight}
+	\end{equation}
+
+	For a connection created by \emph{developmental rescue}, the corresponding initial weight is instead
+	\begin{equation}
+		w_{i,j,k}^{u,v,w}=\max\!\left\{\left(1-A_{i,j,k}(x)^2\right)H_{i,j,k}(u,v,w,x)^2,\,0.1\right\}.
+		\label{rescue_synaptic_weight}
+	\end{equation}
+
+	The source-dependent attenuation factor $1-A_{i,j,k}(x)^2$ is the same in both expressions. During ordinary construction, positive values of $H$ determine eligibility and ranking; during rescue, neighboring candidates are ranked by $H^2>0$, regardless of the sign of $H$. The attenuation and the minimum initial weight of $0.1$ are applied only after selecting the connection, so neither affects candidate ranking or eligibility. Thus, every connection created during initial development has weight in $[0.1,1]$, including cases where finite-precision evaluation of $A$ yields $|A|=1$ and the attenuation vanishes. This floor concerns the initial weight only, subsequent synaptic dynamics may weaken or remove connections. For connections originating from input neurons, the input-specific minimum weight defined below is also enforced using the \emph{input influence gene}, so their final initial weight is the maximum of the value in Equation~\ref{initial_synaptic_weight} or~\ref{rescue_synaptic_weight} (as appropriate) and $1/(1+\psi(x))$.
+
+	\item Input neurons always accept external input signals and transmit them on. All the other neurons convert received signals into actions only under certain conditions\footnote{In the case the neuron is not an output neuron this "action" is to send the signal to the other neurons. In the case the neuron is an output neuron, it will be actually converted into an action to be performed by the agent.}. Denote by $T(i, j, k) > 0$ the \emph{activation threshold} of a neuron $n(i, j, k)$. Suppose that the state of the neuron is $s \geq 0$ (this value is the previous state of the neuron plus the sum of several signals coming from the connected neurons). Then the neuronal state is converted into an action only if
+	$$1 - e^{-s/\kappa} > T(i, j, k).$$
+	
+	The function $\sigma(s) := 1 - e^{-s/\kappa}$ is called \emph{saturation function} and it is used to normalize signals. Here $\kappa \geq 1$ is the \emph{exponential factor} of the brain. It is a genetically defined parameter that controls how quickly a signal saturates. This value is determined by the formula
+	$$\kappa(x) = F_{0.4}(x) = \sum_{t=0}^7 \sqrt{1 + t} \cdot 0.4^{x_t},$$
+where  $x = x_0 \ldots x_7$ is the corresponding gene.
+
+	We don't need $\kappa$ to assume high values, so the parameters in its formula are such that $\kappa$ is approximately in the interval $[1, 16]$. This is enough for our purposes.
+	
+	Note that the saturation function is the same for the entire brain. What alters its behavior per neuron is the activation threshold of the neurons. These values are individual for each neuron. To motivate the definition of the threshold, first take a look at the saturation function $\sigma$ below.  
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.7]{figures/saturation_function}
+		\caption{\footnotesize{Saturation function $\sigma(s)$ for $s \in [0, 10]$.}}
+	\end{figure}
+	
+	In particular, note that $$\sigma(0) = 0$$ and $$\lim_{s \to + \infty} \sigma(s) = 1,$$ where the limit approaches from below.	With this, we conclude that all $T$ should be between $0$ and $1$. Now we are ready to define the formula for the activation threshold.
+	
+	The gene that determines the activation threshold is a sequence of the form $x = x_0 \ldots x_{63}$. Then for each neuron $n(i, j, k)$, the activation threshold function is defined by
+	$$T_x(i, j, k) = \frac{1 + A_{i,j,k}(x)}{2}.$$
+	
+	Note that $T_x(i, j, k) \in (0, 1)$. The distribution of the values of this function is shown below.
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.8]{figures/threshold}
+		\caption{\footnotesize{Distribution of the threshold values for an arbitrary neuron fixed and gene $x$ variable. To generate the genes, each digit was drawn from the uniform distribution over $\{ 0, 1, 2, 3 \}$.}}
+	\end{figure} 
+	
+	\item If $n(i, j, k)$ is an input neuron, then $T_x(i, j, k) = 0$ by definition, although input neurons do not use the firing condition described above.
+	
+	\item Whenever a neuron sends a signal, it enters a \emph{refractory state}, meaning that it becomes more difficult to react to stimuli immediately afterward. This effect is represented by a non-negative variable $\rho$, called the \emph{fatigue} of the neuron. Instead of using only $T_x(i,j,k)$ as the activation threshold, non-input neurons use the effective threshold
+	$$T_{\mathrm{eff}}(i,j,k)=T_x(i,j,k)\left(1+\rho\right).$$
+
+	To allow evolution to control the strength of this refractory response, the maximum fatigue is genetically determined. Let $x=x_0\ldots x_7$ be the corresponding gene and define
+	$$\rho_{\max}(x)=F_{0.4}(x).	$$
+
+	At each iteration, the current fatigue is used directly to determine the effective threshold, and the neuron is allowed to send a signal only if
+	$$\sigma(s_t(i,j,k)) > T_{\mathrm{eff}}(i,j,k).$$
+
+	If the neuron sends a signal, its fatigue is reset to the genetically determined maximum value 
+	$$\rho \leftarrow \rho_{\max}(x).$$
+
+	Otherwise, its fatigue is reduced according to
+	$$\rho \leftarrow \frac{\rho}{2}.$$
+
+	Thus, after a firing event, the maximum fatigue is used in the next firing test. In the absence of further firing, the refractory effect decreases geometrically across successive iterations. The order of these operations is illustrated in Figure~\ref{fig:refractory_process}.
+
+	\begin{figure}[H]
+		\centering
+		\begin{tikzpicture}[
+			node distance=7mm,
+			box/.style={
+				draw,
+				rounded corners,
+				align=center,
+				text width=0.17\linewidth,
+				minimum height=11mm
+			},
+			decision/.style={
+				draw,
+				diamond,
+				aspect=2.3,
+				align=center,
+				inner sep=1.5pt
+			},
+			arrow/.style={
+				-{Latex[length=2mm]},
+				thick
+			}
+		]
+
+		\node[box] (threshold)
+		{Compute threshold\\
+		$T_{\mathrm{eff}}=T_x(1+\rho)$};
+
+		\node[decision, right=9mm of threshold] (fire)
+		{$\sigma(s_t)>T_{\mathrm{eff}}$?};
+
+		\node[box, above right=9mm and 10mm of fire] (yesfire)
+		{Send signal};
+
+		\node[box, right=6mm of yesfire, text width=0.19\linewidth] (yesrho)
+		{Update fatigue\\
+		$\rho \leftarrow \rho_{\max}(x)$};
+
+		\node[box, below right=9mm and 10mm of fire, text width=0.17\linewidth] (nofire)
+		{No firing\\
+		$\rho \leftarrow \frac{\rho}{2}$};
+
+		\node[box, below right=1mm and 5mm of yesrho, text width=0.12\linewidth] (end)
+		{Continue neuronal\\update};
+
+		\draw[arrow] (threshold) -- (fire);
+
+		\draw[arrow] (fire) -- node[above left] {\footnotesize Yes} (yesfire);
+		\draw[arrow] (fire) -- node[below left] {\footnotesize No} (nofire);
+
+		\draw[arrow] (yesfire) -- (yesrho);
+		\draw[arrow] (yesrho) -- (end);
+		\draw[arrow] (nofire) -- (end);
+
+		\end{tikzpicture}
+
+		\caption{\footnotesize{Order of the refractory-state update within one simulation iteration. The current fatigue determines the effective threshold. If the neuron fires, it sends a signal and its fatigue is reset to the genetically determined maximum value $\rho_{\max}(x)=F_{0.4}(x)$. Otherwise, the fatigue is reduced by half.}}
+		\label{fig:refractory_process}
+	\end{figure}
+
+	\item Input neurons do not have a refractory state.
+	
+	\item If the neuron $n(i,j,k)$ sends a signal to $n(u,v,w)$, then the connection is reinforced. For a gene $x=x_0\ldots x_{63}$, define the \emph{Hebbian plasticity rate}
+	$$\gamma_x(i,j,k)=\frac{1 + A_{i,j,k}(x)}{4}.$$
+	
+	Note that $\gamma_x(i,j,k)\in[0,1/2]$. Whenever the connection transmits a signal, its weight is updated by
+	$$w_{i,j,k}^{u,v,w}\leftarrow w_{i,j,k}^{u,v,w}+\gamma_x(i,j,k)\left(1-w_{i,j,k}^{u,v,w}\right).$$
+	
+	Values close to zero produce regions whose connections do not become strong merely because they are frequently used, while larger values preserve the fast associative reinforcement of the original model. This gives evolution control over the balance between stable and rapidly adapting regions.
+	
+	\item The Hebbian rule above strengthens a connection because it was used, but it does not distinguish whether later activity of the organism makes that use worth preserving. We want to introduce this possibility without assuming that the environment sends a reward variable directly to the brain. The model below keeps only a small number of ingredients: 
+	
+	\begin{itemize}
+		\item neuronal activity may generate a local modulatory state
+		\item this state may persist and spread through the brain
+		\item different neurons may react differently to it
+		\item recently used synapses may remain temporarily susceptible to change
+	\end{itemize}
+	
+	No particular neuron type, brain region, reward meaning, or external teaching signal is prescribed in advance.
+
+	A gene $x=x_0\ldots x_{63}$ determines how strongly each neuron contributes to the modulatory state. Define the \emph{modulatory release factor}
+	$$Q_x(i, j, k) = \frac{1 + A_{i,j,k}(x)}{2}.$$
+	
+	Thus $Q_x(i,j,k)\in[0,1]$. Whenever $n(i,j,k)$ emits a signal at iteration $t$, it produces the local modulatory contribution
+	$$r_t(i,j,k)=Q_x(i,j,k)\,\sigma\left(s_t(i,j,k)\right),$$
+and $r_t(i,j,k)=0$ when the neuron does not emit a signal. This definition does not create a separate class of modulatory neurons. A neuron with $Q_x(i,j,k)\approx0$ behaves, for this mechanism, as an ordinary neuron. A neuron with a large value can become a strong source. The same neuron may simultaneously participate in ordinary signal processing and in modulation.
+
+	The same set $\mathcal{V}(i,j,k)$ of orthogonally adjacent valid positions used in developmental rescue also defines the local neighborhood for modulatory-field propagation:
+	$$\mathcal{V}(i,j,k)=\left\{ (u,v,w): |u-i|+|v-j|+|w-k| = 1\right\},$$
+where only positions lying inside the mesh are retained. Thus, an interior neuron has at most six neighbors: $(i\pm1,j,k)$, $(i,j\pm1,k)$, and $(i,j,k\pm1)$ 
+
+	\begin{figure}[h]
+	\centering
+	\begin{tikzpicture}[
+		x={(1cm,0cm)},
+		y={(0.55cm,0.28cm)},
+		z={(0cm,1cm)},
+		scale=1.2,
+		every node/.style={font=\small}
+	]
+
+	% Connections to the 6-neighborhood
+	\draw[thick, blue] (0,0,0) -- (1,0,0);
+	\draw[thick, blue] (0,0,0) -- (-1,0,0);
+	\draw[thick, blue] (0,0,0) -- (0,1,0);
+	\draw[thick, blue] (0,0,0) -- (0,-1,0);
+	\draw[thick, blue] (0,0,0) -- (0,0,1);
+	\draw[thick, blue] (0,0,0) -- (0,0,-1);
+
+	% Highlighted neighbor nodes
+	\fill[blue] (1,0,0) circle (2pt);
+	\fill[blue] (-1,0,0) circle (2pt);
+	\fill[blue] (0,1,0) circle (2pt);
+	\fill[blue] (0,-1,0) circle (2pt);
+	\fill[blue] (0,0,1) circle (2pt);
+	\fill[blue] (0,0,-1) circle (2pt);
+
+	% Central neuron
+	\fill[red] (0,0,0) circle (2.4pt);
+
+	% Labels
+	\node[below right] at (0,0,0) {$(i,j,k)$};
+	\node[right]       at (1,0,0) {$(i+1,j,k)$};
+	\node[left]        at (-1,0,0) {$(i-1,j,k)$};
+	\node[above right] at (0,1,0) {$(i,j+1,k)$};
+	\node[below left]  at (0,-1,0) {$(i,j-1,k)$};
+	\node[above]       at (0,0,1) {$(i,j,k+1)$};
+	\node[below]       at (0,0,-1) {$(i,j,k-1)$};
+
+	\end{tikzpicture}
+	\caption{\footnotesize{Illustration of the local neighborhood $\mathcal{V}(i,j,k)$ in the three-dimensional mesh. The red point denotes the central neuron, and the blue points are its six orthogonally adjacent valid neighbors.}}
+	\label{fig:local_neighborhood}
+	\end{figure}
+
+	A separate gene $z=z_0\ldots z_7$ determines three dynamical parameters,
+	$$\lambda(z)=\frac{1}{1+e^{-G_{1,0}(z)}},\qquad \nu(z)=\frac{1}{1+e^{-G_{0,1}(z)}},\qquad \mu(z)=\frac{1}{1+e^{-G_{1,1}(z)}}.$$
+	The parameters $\lambda$, $\nu$, and $\mu$ determine, respectively, the temporal persistence of the modulatory field, its spatial spread through the mesh, and the persistence of synaptic eligibility traces. 
+	
+	Let $c_t(i,j,k)\geq0$ denote a scalar \emph{modulatory field} at the position of the neuron. Starting from $c_0(i,j,k)=0$, we update	
+	$$c_t(i,j,k)=\lambda(z)\Bigg[(1-\nu(z))c_{t-1}(i,j,k) + \frac{\nu(z)}{\card(\mathcal{V}(i,j,k))}\sum_{(u,v,w)\in\mathcal{V}(i,j,k)}c_{t-1}(u,v,w)\Bigg]+r_t(i,j,k).$$
+	
+	This is deliberately a general local field rather than a detailed simulation of a particular neurotransmitter. The retained properties are only local production, persistence, and spatial propagation. The average over $\mathcal{V}(i,j,k)$ is not an average of neuronal outputs, it is only a discrete local mixing rule that allows the field itself to propagate through the mesh. For small $\nu$ the influence remains concentrated near its sources, for large $\nu$ it spreads more broadly. Small $\lambda$ produces brief events, while values close to $1$ allow slowly varying modulatory states. Consequently, the same rule can produce almost isolated local effects, broad waves of modulation, persistent regional states, or useless saturated activity, depending on the genome and on the neuronal dynamics.
+
+	Another gene $y=y_0\ldots y_{63}$ determines how each neuron responds to the local field. Define the \emph{modulatory sensitivity}
+	$$R_y(i, j, k) = A_{i,j,k}(y)\in[-1,1].$$
+	
+	The effective modulation at the neuron is
+	$$m_t(i,j,k)=R_y(i,j,k)\,\sigma_1\left(c_t(i,j,k)\right).$$
+	
+	The magnitude $|R_y|$ determines how sensitive that location is to the field, while its sign determines the direction in which the field influences synaptic plasticity. A value close to zero makes the region practically insensitive. This is intended only as an abstract counterpart of the fact that a released modulator has no fixed effect independently of the tissue that receives it. The response depends on the local biological machinery. No receptor classes or predefined positive and negative systems are introduced.
+
+	A modulatory event can occur after the synaptic activity that should be affected by it. Therefore, every existing directional connection stores an \emph{eligibility trace}. Let
+	$$a_t(i,j,k,u,v,w)=\left\{\begin{array}{ll}
+	\sigma\left(s_t(i,j,k)\right)\sigma\left(s_t(u,v,w)\right), & \text{if the connection transmitted at }t,\\
+	0, & \text{otherwise.}
+	\end{array}\right.$$
+	
+	The trace is updated by
+	$$e_t(i,j,k,u,v,w)=\mu(z)e_{t-1}(i,j,k,u,v,w)+(1-\mu(z))a_t(i,j,k,u,v,w),\qquad e_0=0.$$
+	
+	Thus $e_t\in[0,1]$. The instantaneous eligibility is based on co-activation of the two ends of a connection, while the recurrence stores a fading memory of this local synaptic event. The parameter $\mu$ does not specify a fixed delay between action and consequence, it only determines how long the history of a used connection remains available. Evolution may therefore produce short or long temporal credit horizons.
+
+	After the ordinary Hebbian reinforcement above and before the decay of the connection, the endogenous correction is applied using the modulation at the postsynaptic neuron. To keep the weight in $[0,1]$ without introducing another learning-rate parameter, we use a symmetric bounded update:
+	$$w_{i,j,k}^{u,v,w}\leftarrow
+	\left\{\begin{array}{ll}
+	w_{i,j,k}^{u,v,w}+m_t(u,v,w)e_t(i,j,k,u,v,w)\left(1-w_{i,j,k}^{u,v,w}\right), & m_t(u,v,w)\geq0,\\[2mm]
+	w_{i,j,k}^{u,v,w}+m_t(u,v,w)e_t(i,j,k,u,v,w)w_{i,j,k}^{u,v,w}, & m_t(u,v,w)<0.
+	\end{array}\right.$$
+	
+	Positive modulation moves an eligible connection toward $1$, negative modulation moves it toward $0$, and old or unrelated connections change little because their eligibility traces are small. The strength of the correction is not fixed by a separate global constant, it emerges from the amount of local field, the genetically defined sensitivity, and the recent use of the connection.
+
+	The purpose of this construction is not to force the evolution of a particular neuromodulatory architecture. There are no fixed modulatory regions, no source threshold, no receptor taxonomy, and no externally supplied scalar saying that an event was good or bad. A genome may produce a nearly ineffective modulatory system, destructive plasticity, diffuse noise, or highly organized local source/target patterns. The evolutionary process is responsible for preserving only the configurations that improve the ability of the organism to adapt during its lifetime.
+	
+	\item At any iteration, the weight $w_{i,j,k}^{u,v,w}$ is reduced by a small factor given by the update formula
+	$$w_{i,j,k}^{u,v,w} \leftarrow w_{i,j,k}^{u,v,w} - e^{-12 / D(i, j, k)}.$$
+	
+	Here, $D(i,j,k)>0$ is the \emph{decay factor} associated with the neuron $n(i,j,k)$. This reduction is applied even in iterations where there is reinforcement.
+
+	The decay factor is defined by the gene $x=x_0\ldots x_{63}$ through the formula
+	$$D(i,j,k,x)=1.5+A_{i,j,k}(x).$$
+
+	In particular, since $0.5\leq D(i,j,k,x)\leq2.5$, we always have
+	$$3.78 \times 10^{-11} \approx e^{-12/0.5} \leq e^{-12/D(i,j,k,x)} \leq e^{-12/2.5} \approx 8.23 \times 10^{-3}.$$
+
+	For a connection with initial weight $1$ and no reinforcement, these bounds correspond to approximately $2.65 \times 10^{10}$ iterations at the slowest-decaying extreme, $D=0.5$, and approximately $122$ iterations at the fastest-decaying extreme, $D=2.5$. Assuming a reference execution rate of $60$ iterations per second, these values correspond to approximate decay times of $14$ years and $2.03$ seconds, respectively.
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.8]{figures/decay}
+		\caption{\footnotesize{Distribution of $e^{-12 / D(i, j, k, x)}$ for $p = 64, I = 50, J = 50, K = 10$. To generate the genes, each digit was drawn from the uniform distribution over $\{ 0, 1, 2, 3 \}$.}}
+	\end{figure} 
+	
+	If $w_{i,j,k}^{u,v,w} \leq 0$, the connection dies. To recreate the same connection again, it is necessary to go through the process described below.
+	
+	\item The decay explained above does not apply to connections originating from input neurons.
+	
+	\item Just to recapitulate, a non-input neuron $n(i, j, k)$ is able to emit a signal at time $t$ if 
+	$$\sigma(s) > T(i, j, k)\cdot\left( 1 + \rho \right).$$
+
+	Regardless of whether the neuron was able to emit the signal forward or not, its own state $s = s_t(i, j, k)$ is scaled over time by a factor $M \in [0, 1)$ called the \emph{retention factor} of the neuron. At the end of the neuronal update, the state is updated by
+	$$s_t(i, j, k) \leftarrow M \cdot s_t(i, j, k).$$
+	
+	The retention factor is defined by the gene $x = x_0 \ldots x_{63}$ through the formula
+	$$M(i,j,k, x) = \frac{1 - e^{-1 -A_{i,j,k}(x) }}{1 - e^{-2}}.$$
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.8]{figures/M_distribution}
+		\caption{\footnotesize{Distribution of $M(i, j, k, x)$ for $p = 64, I = 50, J = 50, K = 10$. To generate the genes, each digit was drawn from the uniform distribution over $\{ 0, 1, 2, 3 \}$.}}
+	\end{figure} 
+	
+	\item For input neurons, the retention factor is set to $M=0$ by definition. Therefore, an external input received in one iteration is transmitted during that iteration but is not retained as neuronal state afterward. A persistent sensory input must consequently be supplied again in each iteration in which the corresponding sensor remains active.
+	
+	This nonlinear mapping makes the retention factor increase smoothly with $A_{i,j,k}(x)$ for non-input neurons. Since the retention factor is applied at every iteration, it controls how quickly the residual neuronal state fades across successive updates.
+	
+	\item Let $s = s_t(i, j, k)$ be the state of the neuron $n(i, j, k)$ at time $t$. Associated to each neuron there is a \emph{polarity factor} $\alpha \in \{-1, 1\}$ that defines the sign of the signal emitted by the neuron. Therefore, if the neuron $n(i, j, k)$ is allowed to emit its signal forward to $n(u, v, w)$, it will emit its weighed normalized signal with sign determined by its polarity factor. To be precise, it will emit the signal
+	$$\alpha \cdot w_{i, j, k}^{u, v, w} \cdot \sigma(s).$$
+	
+	If $\alpha = 1$, we say the neuron is \emph{excitatory}, otherwise it is called \emph{inhibitory}. The polarity factor is defined by the gene $x = x_0 \ldots x_{63}$ through the formula
+	$$\alpha_x(i, j, k) = 
+		\left\{\begin{array}{ll}
+			-1, & A_{i,j,k}(x) < A_{0,0,0}(x),\\
+			1, & A_{i,j,k}(x) \geq A_{0,0,0}(x).
+		\end{array}\right.$$
+	
+	Since inhibitory signals can decrease the state of their targets, the sum of the incoming signals may cause a provisional neuronal state to become negative. However, neuronal states are restricted to $s \geq 0$ throughout the simulation. Therefore, whenever an update would produce a negative state, the lower bound is enforced by
+	$$s_t(i,j,k) \leftarrow \max\left\{0, s_t(i,j,k)\right\}.$$
+	In this way, inhibition can completely suppress neuronal activity, but it cannot produce negative neuronal states.
+	
+	\item Input neurons are always excitatory. Therefore, every connection originating from an input neuron uses $\alpha=1$.
+	
+	\item The gene that determines the threshold for the creation of new connections is a sequence of the form $x=x_0\ldots x_7$. This threshold is called \emph{structural plasticity} and is defined by
+	$$P(x)=1.75 + 0.25 \cdot \cos\left(G_{1,1}(x)\right).$$
+
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.45]{figures/new_connections_threshold}
+		\caption{\footnotesize{Distribution of the plasticity values. To generate	the genes, each digit was drawn from the uniform distribution over $\{0,1,2,3\}$.}}
+	\end{figure}
+
+	In particular, note that $P(x)\in[1.5, 2]$. Connections involving input neurons do not participate in this procedure, since input neurons receive their activity directly from external signals and are therefore of a different nature.
+
+	To avoid storing an explicit history of neuronal signals, each non-input neuron $n(i,j,k)$ maintains a \emph{activity trace} $R_t(i,j,k)\in[0,1]$ representing its recent activity. The trace uses the same persistence parameter $\mu(z)$ previously introduced for the synaptic eligibility traces and is updated by
+	$$R_t(i,j,k) = \mu(z)R_{t-1}(i,j,k) + \left(1-\mu(z)\right)\sigma(s_t(i,j,k)), \qquad 	R_0(i,j,k)=0. $$
+
+	Thus, $R_t$ acts as a fading memory of the recent activity of the neuron.\footnote{These values are stored regardless of whether the neuron has transmitted a signal during that iteration.} The same genetically determined parameter $\mu(z)$ therefore controls the temporal persistence of both synaptic eligibility and neuronal activity traces. Small values of $\mu$ emphasize the most recent activity, whereas values close to $1$ preserve information over a longer temporal interval. Since the update is a convex combination of values in $[0,1]$, the activity trace also remains in $[0,1]$. The trace is updated from the current normalized neuronal activity before structural plasticity is evaluated, so the test performed at iteration $t$ uses $R_t$.
+	
+	\item The neuronal activity trace is also used as an intrinsic homeostatic mechanism to prevent non-input neurons from remaining for long periods in extremely low or extremely high activity regimes. This mechanism acts only near the extremes of the activity range and does not interfere with neurons whose recent activity remains within the interval
+	$$L \leq R_t(i,j,k) \leq H,$$
+where the fixed bounds are
+	$$L=0.05, \qquad H=0.95.$$
+
+	Since the saturation function is
+	$$\sigma(s)=1-e^{-s/\kappa},$$
+the neuronal states corresponding to these two signal levels are
+	$$s_L=\sigma^{-1}(L)=-\kappa\ln(1-L), \qquad
+	s_H=\sigma^{-1}(H)=-\kappa\ln(1-H).$$
+
+	For each non-input neuron, let $s$ denote its current state and let $R_t$ denote its current activity trace. The homeostatically corrected state is defined by
+	$$
+	s \leftarrow
+	\left\{
+	\begin{array}{ll}
+	\displaystyle
+	s+\frac{L-R_t}{L}(s_L-s),
+	& R_t<L \text{ and } s<s_L, \\[10pt]
+	\displaystyle
+	s-\frac{R_t-H}{1-H}(s-s_H),
+	& R_t>H \text{ and } s>s_H, \\[10pt]
+	s,
+	& \text{otherwise}.
+	\end{array}
+	\right.
+	$$
+
+	Thus, the mechanism is inactive for $L \leq R_t \leq H$. As $R_t$ approaches either extreme, the correction increases continuously: low-activity states are moved toward $s_L$, while excessively high states are moved toward $s_H$. No additional genetically determined parameter is introduced, since the state scale follows directly from the exponential factor $\kappa$ through the inverse saturation function.
+	
+	\item At each iteration, if an internal neuron $n(i,j,k)$ fired a signal, then it is allowed to form one new outgoing connection. A neuron $n(u,v,w)$ is selected uniformly at random from the whole brain. If the selected neuron is already connected to $n(i,j,k)$ or it is an input neuron, the process terminates without any connection being made. Otherwise, a new connection $w_{i,j,k}^{u,v,w}$ is created if
+	$$R_t(i,j,k) + R_t(u,v,w) > P(x).$$
+
+	Since both activity traces belong to $[0,1]$, their sum belongs to $[0,2]$, while $P(x)\in[1.5,2]$. Consequently, the genetically determined plasticity threshold is restricted to the upper part of the possible combined-activity range, so a new connection can emerge only when the source and target have sufficiently high recent activity. Once the connection is created, its initial weight is
+	$$w_{i,j,k}^{u,v,w} = \frac{P(x)}{4},$$
+so $w_{i,j,k}^{u,v,w}\in[0.375,0.5]$. Unlike connections established during the initial development of the brain, these lifetime-generated connections do not use the connectivity function or its source-dependent attenuation to determine their initial weights. Here $x$ continues to denote the gene defining $P$, not the connections gene.
+
+	Note that $n(u, v, w)$ may be an output neuron, so it is possible to form new connections between internal neurons and output neurons. However, it is not possible to form new connections between input neurons and internal neurons by this procedure.
+	
+	\item Let $r$ be the raw signal received by an input neuron. 	The model does not prescribe how raw external information must be encoded. Each input channel applies an externally defined mapping $f$ that converts its raw input $r$, of arbitrary form, into a scalar $s = f(r) \in [0,1]$. This result is the actual signal received by the neuron. These transformations are external to the brain and they depend entirely of the agent we want to build. 
+	
+	The same goes to the outputs. After the final output is generated, it will be just a number. The subsequent action is a consequence of a function that determines what the agent should do based on the output number. These functions also are external to the brain. 
+	
+	When a simulation runs to generated the brain evolution, the brain itself is the "being"\ we want to fit in the set of inputs/outputs transformations previously designed. 
+	
+	\item Merely allowing input neurons to transmit external signals forward is not sufficient, because their signals compete in the postsynaptic sum with signals arriving from other neurons. To give evolution control over how strongly input signals influence the internal brain dynamics, we introduce an \emph{input influence gene}.
+
+	Given a neuron $n$, define $\mathcal{I}(n)$ as the number of incoming connections to $n$ and $\mathcal{O}(n)$ as the number of outgoing connections from $n$. Let $x=x_0\ldots x_7$ be the input influence gene. After the initial brain generation, we define the input influence factor
+	$$\psi(x) = \frac{1 + \sin\left(G_{1,1}(x)\right)}{|\mathcal{N}_{int}|} \sum_{n \in \mathcal{N}_{int}}\mathcal{I}(n).$$
+
+	On average, an internal neuron has
+	$$\frac{1}{|\mathcal{N}_{int}|} \sum_{n \in \mathcal{N}_{int}}\mathcal{I}(n)$$
+incoming connections. This value is established during brain generation and remains fixed throughout the lifetime of the brain. Consequently, $\psi(x)$ is also fixed after generation and is not affected by connections subsequently created or removed by the lifetime dynamics.
+
+	Let $s\in[0,1]$ be the state of the input neuron $n(i,j,k)$ at a certain moment. This state is transmitted forward as the amplified signal $\psi(x)s$, allowing the input signal to compete with the aggregate activity received from other neurons. The normalization $\sigma$ is not applied to the transmitted input signal, avoiding an unnecessary loss of information before this amplification. Since input neurons are excitatory by definition, the signal transmitted through an existing connection to an internal neuron $n(u,v,w)$ is
+	$$w_{i,j,k}^{u,v,w} \cdot \psi(x) \cdot s.$$
+
+	The factor $1+\sin\left(G_{1,1}(x)\right)\in[0,2]$ controls how strongly the initial mean incoming degree contributes to the amplification of input signals. Its distribution is given below.
+
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=2.1]{figures/phi}
+		\caption{\footnotesize{Distribution of the input influence factors $1+\sin\left(G_{1,1}(x)\right)$. To generate the genes, each digit was drawn from the uniform distribution over $\{0,1,2,3\}$.}}
+	\end{figure}
+
+    \item Connections originating from input neurons are preserved throughout the lifetime of the brain. They do not undergo passive synaptic decay, although Hebbian plasticity and endogenous modulation may still change their weights. To prevent these connections from becoming functionally negligible, their weights are constrained by
+	$$\frac{1}{1+\psi(x)}\leq w_{i,j,k}^{u,v,w}\leq1.$$
+	
+	After each synaptic update, this interval is enforced by
+	$$w_{i,j,k}^{u,v,w}\leftarrow \max \left\{ w_{i,j,k}^{u,v,w},\frac{1}{1+\psi(x)} \right\}.$$
+	
+	The lower bound depends on the genetically determined input influence itself. If $\psi(x)=0$, the weight is forced to $1$, but the transmitted input signal remains zero.
+	
+	\item Connections from internal neurons to output neurons remain subject to passive synaptic decay, but the decay rate depends on the recent activity of the output neuron. For such connections, the decay step is
+	$$w_{i,j,k}^{u,v,w}\leftarrow w_{i,j,k}^{u,v,w} - R_t(u,v,w) \cdot e^{-12/D(i,j,k)}.$$
+
+	Since $R_t(u,v,w) \in [0,1]$, connections terminating at outputs with high recent activity undergo decay at approximately the ordinary rate, whereas connections terminating at outputs with low recent activity undergo slower decay. This mechanism prolongs the lifetime of connections to outputs with low activity, but does not guarantee their indefinite preservation.
+
+	The activity trace is updated from $\sigma(s_t(u,v,w))$ regardless of whether the output neuron fires. Therefore, an output that does not emit a signal may still have positive normalized activity below its effective firing threshold. The absence of output firing, or of execution of the associated action, does not by itself imply that $R_t(u,v,w)$ tends to zero.
+
+	Moreover, the neuronal homeostatic mechanism also applies to output neurons and can raise their states when recent activity is low. It can therefore sustain positive subthreshold activity even without incoming signals. Consequently, the geometric decay of the activity trace cannot be inferred merely from a prolonged absence of firing, and no finite bound on the remaining cumulative passive synaptic decay follows from that absence alone. The intended effect of the output-dependent factor is reduced passive decay at low recent normalized activity; the actual persistence of a connection also depends on subsequent activity, Hebbian reinforcement, and endogenous modulation.
+
+	\item The operations affecting a connection depend on the role of its source neuron. Input neurons transmit $w \cdot \psi \cdot s$ whenever an external signal is present. They bypass the ordinary activation threshold and refractory state, have retention factor $M = 0$, and do not maintain the activity trace $R_t$. Internal neurons transmit $\alpha \cdot w \cdot \sigma(s)$ only when they fire and follow the ordinary neuronal dynamics. Output neurons also follow the ordinary non-input dynamics, but they have no outgoing neural connections and expose their firing activity externally.
+
+	For input and internal sources, transmission is followed by Hebbian reinforcement when transmission occurred, then by the eligibility-trace update and endogenous modulation. The final step depends again on the source: input connections are clamped to the interval above and do not decay, while internal connections undergo passive decay and are removed if their weight becomes nonpositive.
+
+	\begin{figure}[H]
+		\centering
+		\begin{tikzpicture}[
+			>=stealth,
+			every node/.style={font=\scriptsize},
+			block/.style={
+				draw,
+				rectangle,
+				rounded corners=1mm,
+				align=center,
+				inner sep=4pt,
+				minimum height=0.9cm
+			},
+			choice/.style={
+				draw,
+				diamond,
+				aspect=2,
+				align=center,
+				inner sep=2pt
+			},
+			arrow/.style={->, thick}
+		]
+
+			\node[choice] (role) at (0,0) {Source\\role};
+
+			\node[block] (input) at (3.1,1.35)
+				{Input\\$w \cdot\psi \cdot s$};
+
+			\node[block] (internal) at (3.1,0)
+				{Internal\\$\alpha \cdot w \cdot \sigma(s)$};
+
+			\node[block] (output) at (3.1,-1.35)
+				{Output\\No outgoing\\connection};
+
+			\node[block] (hebb) at (6.0,0.65)
+				{Hebbian reinforcement\\if transmitted};
+
+			\node[block] (elig) at (8.8,0.65)
+				{Eligibility\\update};
+
+			\node[block] (mod) at (11.0,0.65)
+				{Endogenous\\modulation};
+
+			\node[block] (inputend) at (14.0,1.45)
+				{Input\\
+				$w\leftarrow\max\{w,(1+\psi)^{-1}\}$\\
+				No passive decay};
+
+			\node[block] (internalend) at (14.0,-0.15)
+				{Internal\\
+				Passive decay\\
+				Remove if $w\leq0$};
+				
+			\node[block] (outputend) at (14.0,-1.8)
+				{Output\\
+				Passive decay with\\
+				$w\leftarrow w - R_t \cdot e^{-12/D}$\\
+				Remove if $w\leq0$};
+
+			\draw[arrow] (role) -- node[above left] {Input} (input);
+			\draw[arrow] (role) -- node[above] {Internal} (internal);
+			\draw[arrow] (role) -- node[below left] {Output} (output);
+
+			\draw[arrow] (input.east) -- (hebb.north west);
+			\draw[arrow] (internal.east) -- (hebb.south west);
+
+			\draw[arrow] (hebb) -- (elig);
+			\draw[arrow] (elig) -- (mod);
+
+			\draw[arrow] (mod.east) -- (inputend.west);
+			\draw[arrow] (mod.east) -- (internalend.west);
+			\draw[arrow] (mod.east) -- (outputend.west);
+
+		\end{tikzpicture}
+
+		\caption{\footnotesize{Temporal order of the operations affecting existing connections. Input and internal sources share the plasticity steps but differ in transmission and in the final weight treatment.}}
+	\end{figure}
+
+	\item If the removal of a connection leaves an internal or output neuron $n(u,v,w)$ with no incoming connections, a homeostatic reconnection procedure is applied. Candidate sources are restricted to internal neurons $n(i,j,k)$ lying within the region $\mathcal{V}_{\text{init}}(i, j, k, y)$, where $y$ is the initial search region gene.
+	
+	Among all valid candidates, the source with the greatest recent activity trace is selected,
+	$$(i^\ast,j^\ast,k^\ast) \in \arg\max_{(i,j,k)} R_t(i,j,k).$$
+
+	If several candidates attain the same maximum value, one of them is selected uniformly at random. If no valid candidate exists, no replacement connection is created.
+
+	When a source is selected, a new directional connection from $n(i^\ast,j^\ast,k^\ast)$ to $n(u,v,w)$ is created with initial weight 
+	$$w_{i^\ast,j^\ast,k^\ast}^{u,v,w}=\frac{P(x)}{4},$$
+and its eligibility trace is initialized to zero.
+
+	This procedure does not preserve a synapse that has become ineffective. Instead, the old connection is allowed to disappear normally, while the disconnected neuron is given a new opportunity to receive activity from a recently active region of the brain. Unlike the genetically determined initial connectivity, this reconnection does not use $H$, its source is determined entirely by the recent dynamical state of the brain.
+	
+\end{enumerate}
+
+\section{Overview}
+	We have to choose the following parameters prior to the execution of the simulation:
+	\begin{itemize}
+		\item Dimensions $I, J, K$ of the brain.
+		\item Connections density $\eta$.
+		\item Number of inputs $|\mathcal{N}_{in}|$ and number of outputs $|\mathcal{N}_{out}|$.
+	\end{itemize}
+	
+	During the simulation, these are the genes that are meant to improve over time:
+	\begin{table}[h]
+	\centering
+	\begin{tabular}{|c|c|c|c|}
+		\hline
+		\textbf{Gene feature} & \textbf{Gene size} & \textbf{Global parameter} & \textbf{Neuron parameter}\\
+		\hline
+		Maximum number of initial connections & 8 & Yes & No\\
+		\hline
+		Base $\beta$ for maximum initial connections & 8 & Yes & No\\
+		\hline
+		Initial search region & 64 & Yes & No\\
+		\hline
+		Initial connections & 64 & No & Yes\\
+		\hline
+		Activation threshold & 64 & No & Yes\\
+		\hline
+		Refractory strength & 8 & Yes & No\\
+		\hline
+		Exponential factor & 8 & Yes & No\\
+		\hline
+		Decay factor & 64 & No & Yes\\
+		\hline
+		Retention factor & 64 & No & Yes\\
+		\hline
+		Polarity factor & 64 & No & Yes\\
+		\hline
+		Hebbian plasticity rate & 64 & No & Yes\\
+		\hline
+		Modulatory release factor & 64 & No & Yes\\
+		\hline
+		Modulatory sensitivity & 64 & No & Yes\\
+		\hline
+		Modulatory dynamics & 8 & Yes & No\\
+		\hline
+		Structural plasticity & 8 & Yes & No\\
+		\hline
+		Input influence & 8 & Yes & No\\
+		\hline
+	\end{tabular}
+	\caption{\footnotesize{Genomic structure of the model, where each gene encodes a distinct functional parameter governing network dynamics.}}
+	\label{model_gens}
+	\end{table}
+	
+	In total, we have 632 digits making up the genome. This might not seem like much, but the total number of possible combinations is $4^{632} \approx 10^{381}$. When comparing this model to biological genomes, the raw scale difference is enormous. Real organisms range from millions to billions of base pairs. In a purely structural sense, this places it many orders of magnitude below even the simplest known biological genomes. However, this kind of comparison is not very informative, because biological genomes themselves contain large amounts of redundancy and non-coding or regulatory regions, and the relevant functional complexity is not proportional to raw size.
+
+A more meaningful comparison is in terms of functional modules and degrees of freedom. In biology, complexity emerges from thousands of interacting genetic and regulatory components, while the model of this work compresses behavior into just 16 high-level genes that can encode rich, nonlinear transformations. This means the system is not attempting to replicate biological scale, but rather to explore how complex dynamics can arise from a highly compressed set of parameters. Its expressive power depends less on size and more on how much dynamical structure each gene can induce.
+
+	\begin{table}[h]
+	\centering
+	\begin{tabular}{|c|c|c|}
+		\hline
+		\textbf{Organism} & \textbf{Genome size} & \textbf{Gene count} \\
+		\hline
+		Model & $6.32 \times 10^{2}$ & 16 \\
+		\textit{Escherichia coli} (K-12) & $\approx 4.6 \times 10^{6}$ & $\approx 4{,}300$  \\
+		\textit{Drosophila melanogaster} & $\approx 1.4 \times 10^{8}$ & $\approx 13{,}600$  \\
+		\textit{Homo sapiens} & $\approx 3.2 \times 10^{9}$ & $\approx 20{,}000$  \\
+		\hline
+	\end{tabular}
+	\caption{\footnotesize{Comparison between a compressed genetic model and real biological genomes. Genome sizes refer to haploid assemblies. Gene counts are approximate functional gene annotations.}}
+	\end{table}
+	
+
+\section{Endogenous Learning and Evolutionary Selection}
+
+	The modulatory field above is part of the brain and not part of the environment. During the lifetime of an individual, the environment can influence learning only through quantities that reach the ordinary input neurons and through the physical consequences of the outputs. In particular, the synaptic update rule never receives a variable of the form
+	$$r_t=R(\text{environment state at }t)$$
+	whose purpose is to tell the brain how desirable the last event was. A change in energy, contact with an object, a visual pattern, or any other available quantity may still become important, but only if the ordinary neuronal dynamics transforms that information into internal activity that eventually affects the modulatory field.
+
+	This does not prevent the evolutionary simulation from selecting organisms by survival and reproduction. The distinction is between information available to selection across generations and information supplied directly to the synapses during one lifetime. Evolution may therefore favor genomes in which sensory and internal signals organize $Q_x$, $R_y$, the recurrent connectivity, and the eligibility dynamics into useful learning mechanisms, without the simulator specifying what those mechanisms should regard as reward.
+
+	The construction was intentionally kept continuous and non-categorical. A neuron is not declared to be modulatory, it merely has a genetically determined value of $Q_x$. A region is not declared to be a receptor region, it merely has a genetically determined value of $R_y$. The field is not assigned a biological identity, it is only a local state that can be produced, persist, spread, and alter eligible synapses. Specialized source populations, local or broad neuromodulation, insensitive regions, opposing responses, and different temporal credit horizons are therefore possible configurations of the same small set of rules rather than separate mechanisms inserted by hand. Bad configurations are equally possible and are expected to be eliminated only by evolution.
+
+	For the long-term objective of learning to learn, the evolutionary protocol is as important as the neuronal equations. If all generations experience essentially the same situation, selection can encode a useful behavior directly in the genome. A stronger test is to evolve under heterogeneous conditions and then freeze a selected genome and place the resulting brain in environments that were not used during selection. Improvement during the lifetime of the same individual, especially when it disappears after synaptic plasticity is disabled, is evidence that evolution produced a learner rather than only a fixed behavioral solution.
+
+\section{Inputs and Outputs}
+	The model treats inputs and outputs as general interfaces between the brain and the agent, rather than restricting them to external sensory signals and motor actions. Inputs may encode internal variables such as hunger, energy, global or regional neural activity, arousal, or other observable physiological states. Likewise, outputs may represent not only actions on the external environment, but also actions on the agent itself, including modulation of internal physiological variables or direct stimulation of selected brain regions. This allows the evolved brain to potentially learn both environmental behavior and self-regulation without relying on an externally provided reward signal. 
+	
+	Because neural and physiological states can themselves become inputs, and outputs can act on those states or directly stimulate brain regions, the model also admits closed internal feedback loops in which brain activity can influence its own future activity even when external stimuli do not change. Together with recurrent connectivity and persistent neuronal states, such loops may permit self-generated neural dynamics from which processes such as recall, planning, or internally generated thought could emerge. Whether richer phenomena associated with consciousness can arise from these mechanisms is left as an open question rather than assumed by the model.
+
+\section{Offspring}
+
+	Let $X = (x^{(1)}, \ldots, x^{(n)})$ and $Y = (y^{(1)}, \ldots, y^{(n)})$ be two individuals (genomes), each composed of $n$ genes\footnote{Currently we are working with the $n = 16$ genes shown in Table~\ref{model_gens}, but this can change in the future.}. The offspring generation process can be described in the following steps.
+	
+	\begin{enumerate}
+		\item The crossover step is only applied to homologous genes. In our setting, that would be genes with the same superscript.
+		\item Given two homologous genes $x^{(i)}$ and $y^{(i)}$, the procedure makes a cut every 4 positions of the gene. For example, if $x^{(i)} = x_0^{(i)} \ldots x_7^{(i)}$ and $y^{(i)} = y_0^{(i)} \ldots y_7^{(i)}$, then the cut separates each gene into two blocks:
+		$$x_0^{(i)} x_1^{(i)} x_2^{(i)} x_3^{(i)} \ | \ x_4^{(i)} x_5^{(i)} x_6^{(i)} x_7^{(i)}$$
+		$$y_0^{(i)} y_1^{(i)} y_2^{(i)} y_3^{(i)} \ | \ y_4^{(i)} y_5^{(i)} y_6^{(i)} y_7^{(i)}$$
+		
+		The corresponding gene of the child will be assembled block by block, randomly selecting one of the parents' blocks to place in the appropriate position. Let $z^{(i)}$ be the child's corresponding gene. Then there are 4 possibilities:
+		 $$z^{(i)} = x_0^{(i)} x_1^{(i)} x_2^{(i)} x_3^{(i)} \ | \ x_4^{(i)} x_5^{(i)} x_6^{(i)} x_7^{(i)}$$
+		 $$z^{(i)} = x_0^{(i)} x_1^{(i)} x_2^{(i)} x_3^{(i)} \ | \ y_4^{(i)} y_5^{(i)} y_6^{(i)} y_7^{(i)}$$
+		 $$z^{(i)} = y_0^{(i)} y_1^{(i)} y_2^{(i)} y_3^{(i)} \ | \ x_4^{(i)} x_5^{(i)} x_6^{(i)} x_7^{(i)}$$
+		 $$z^{(i)} = y_0^{(i)} y_1^{(i)} y_2^{(i)} y_3^{(i)} \ | \ y_4^{(i)} y_5^{(i)} y_6^{(i)} y_7^{(i)}$$
+		 
+		 The random sampling is $50/50$, there is no preference for any parent. Also, note that this procedure extends naturally for any gene with length multiple of 4, which is the case of our model (we only work with genes of length 8 or 64).
+		 \item After all crossovers are finished, there is a final step of mutation. All digits of the genome are subject to mutation with probability $p_{mut} = 0.001$ ($0.1\%$), where each selected digit is replaced by a randomly sampled value from its allowed range. This value is defined outside the simulation and can be changed.
+	\end{enumerate}
+	
+\section{Memory Consumption}
+
+	A brain contains $IJK$ neurons, and its complete neural and synaptic representation is kept in GPU memory during simulation. The subdivision into $K$ slices is useful for describing the three-dimensional geometry, but the slices are not independently loaded, unloaded, or advanced. For the baseline neuronal data layout, each neuron is assigned three groups of four scalar components, analogous to three RGBA entries and amounting to 12 parameters per neuron. These groups can be stored in linear GPU buffers rather than image textures. Connections are stored separately.
+
+	The learning and structural-plasticity mechanisms add three kinds of persistent dynamic state. The modulatory field requires one scalar $c_t(i,j,k)$ per neuron. Since its update uses values from the previous iteration, an implementation can alternate two single-channel buffers for $c_{t-1}$ and $c_t$. The recent-activity mechanism requires one scalar $R_t(i,j,k)$ per non-input neuron, because each trace depends only on its own previous value and the current neuronal activity, it can be updated in place. The eligibility mechanism requires one scalar $e_t(i,j,k,u,v,w)$ per existing connection. The values $Q_x$, $R_y$, $\lambda$, $\nu$, and $\mu$ are determined by the genome and coordinates and therefore do not need to be stored as independent mutable state. The fixed input influence factor $\psi$ requires only one additional scalar for the entire brain and therefore has negligible memory cost.
+
+	The field update and the activity-trace update are local to the neuronal representation and do not require storing an explicit history of previous signals. Their additional memory is therefore linear in the number of neurons, while the eligibility memory is linear in the number of available connection slots. Using one scalar per entry in GPU buffers, the two modulatory-field buffers require $2IJKp$ bytes and the activity traces require at most a further $IJKp$ bytes per brain, where $p$ is the number of bytes per stored scalar. All of these buffers remain resident alongside the other state of the brain.
+
+	Since $N_{max}$ limits only the initial developmental connectivity, it cannot also be used as the lifetime storage limit. For a fixed-capacity GPU representation, let $N_{\mathrm{slot}}$ denote the number of connection slots reserved per neuron. This is an implementation capacity rather than a genetically determined model parameter; it must accommodate connections created during the lifetime of the brain, or be increased through an explicit reallocation strategy if the reserved capacity is exhausted. Logically, the full connection storage of one brain has shape $I \times J \times K \times N_{\mathrm{slot}}$, with one entry for each potential outgoing connection of each neuron. An entry for a nonexistent connection may be flagged as $(-1,-1,-1,-1)$ in a four-component representation. An occupied entry stores $(u,v,w,\phi)$, where $(u,v,w)$ identifies the target neuron and $\phi$ is its weight.\footnote{In a floating-point representation, \texttt{float16} exactly represents integer indices up to 2048. Larger indices can use \texttt{float32} within its exact-integer range, or a dedicated integer representation; the latter is particularly natural in compute-shader storage buffers.} The eligibility trace may be stored in an additional one-component buffer containing $IJKN_{\mathrm{slot}}$ entries, or packed into available connection-data components. The following texture formats illustrate possible component counts and precisions; storage buffers used by compute shaders need not employ image textures.
+	
+	\begin{table}[ht]
+	\centering
+	\begin{tabular}{lccccc}
+	\hline
+	\textbf{Format} &
+	\textbf{Components} &
+	\textbf{Type} &
+	\textbf{Bytes} &
+	\textbf{Range} &
+	\textbf{Example} \\
+	\hline
+	FORMAT\_R8     & $R$             & uint8 normalized   & 1  & $[0,1]$ & $(0.75)$ \\
+	FORMAT\_RG8    & $RG$         & uint8 normalized   & 2  & $[0,1]$ & $(0.20,0.80)$ \\
+	FORMAT\_RGBA8  & $RGBA$     & uint8 normalized   & 4  & $[0,1]$ & $(0.1,0.5,0.8,1.0)$ \\
+	\hline
+	FORMAT\_RH     & $R$             & float16            & 2  & Float & $(-3.5)$ \\
+	FORMAT\_RGH    & $RG$         & float16            & 4  & Float & $(2.0,-1.2)$ \\
+	FORMAT\_RGBAH  & $RGBA$     & float16            & 8  & Float & $(1.0,-2.0,0.5,7.3)$ \\
+	\hline
+	FORMAT\_RF     & $R$             & float32            & 4  & Float & $(-123.456)$ \\
+	FORMAT\_RGF    & $RG$         & float32            & 8  & Float & $(1.5,-4.2)$ \\
+	FORMAT\_RGBAF  & $RGBA$     & float32            & 16 & Float & $(1.0,-2.0,0.5,100.0)$ \\
+	\hline
+	\end{tabular}
+	\caption{\footnotesize{Selected image formats available in Godot, included as references for component packing and precision. The intended compute-shader representation uses storage buffers rather than requiring image textures.}}
+	\label{tab:image_formats}
+	\end{table}
+	
+	The suffixes \texttt{H} and \texttt{F} indicate the numerical type used to store each texture component. The suffix \texttt{H} (Half Float) corresponds to a 16-bit floating-point number, occupying 2 bytes per component, while the suffix \texttt{F} (Float) corresponds to a standard 32-bit floating-point number, occupying 4 bytes per component. Consequently, a texture in the \texttt{RGBAH} format stores four half-precision floating-point values (8 bytes per texel\footnote{A \emph{texel} (texture element) is the basic storage unit of a texture, analogous to a pixel in an image. Each texel stores one or more numerical components depending on the texture format (e.g., $R$, $RG$, or $RGBA$), and each component may be represented as an integer or floating-point value. In the context of this work, texels are used as generic data containers rather than colors, storing the variables required by the simulation.}), whereas \texttt{RGBAF} stores four single-precision floating-point values (16 bytes per texel). Equivalent groups of four scalars can be represented as vectors in storage buffers, without the texture formats themselves. 
+	
+	Half-precision (\texttt{float16}) provides approximately 3 to 4 significant decimal digits, whereas single-precision (\texttt{float32}) provides approximately 7 significant decimal digits. It is important to note that these values refer to \emph{significant digits} rather than digits after the decimal point. Consequently, the absolute precision depends on the magnitude of the represented value: numbers close to zero are represented with finer resolution than large-magnitude numbers.
+	
+	
+	\begin{figure}[H]
+		\centering
+		\includegraphics[scale=0.35]{figures/brain_gpu}
+		\caption{\footnotesize{Conceptual organization of the complete brain and its data on the GPU. The tensor and RGBA illustrations describe logical grouping, not separate slice transfers or mandatory texture storage. In the illustration, the connection capacity is labeled $N_{max}$; the actual lifetime storage capacity is $N_{\mathrm{slot}}$, as defined in the text.}}
+	\end{figure} 
+
+	\subsection{Estimates}
+
+	To estimate GPU memory consumption, let $I,J,K$ be the dimensions of one complete brain, $N_{\mathrm{slot}}$ its allocated number of connection slots per neuron, and $p$ the number of bytes used per scalar. The baseline representation assigns three four-component neuronal records to each neuron, together with $m$ four-component records for each allocated connection slot. The parameter $m\in\{1,2,3\}$ describes the alternative connection-storage layouts compared in the table below; it does not change the number of neurons or the connectivity rules. The baseline allocation for \emph{one entire brain} is therefore
+	$$Mem_{\mathrm{brain}}=4p\,IJK\,(3+mN_{\mathrm{slot}}).$$
+	
+	In addition, the two modulatory-field buffers require $2IJKp$ bytes, the activity traces require at most $IJKp$ bytes, and separately stored eligibility traces require $IJKN_{\mathrm{slot}}p$ bytes. These auxiliary allocations, as well as any additional working buffers and alignment overhead, are not included in the baseline estimates in the table. The values are shown in binary gigabytes (GiB), obtained by dividing the baseline allocation by $1024^3$.
+	
+	If $B$ brains of the same dimensions and storage configuration are kept on the GPU simultaneously, their combined baseline consumption is
+	$$Mem_{\mathrm{population}}=B\,Mem_{\mathrm{brain}}.$$
+	For brains with different dimensions or capacities, the allocations are summed individually. Each resident brain retains its full neuronal, synaptic, and auxiliary state; no slice streaming is assumed. When the combined allocation exceeds available GPU memory, the simulation must use fewer concurrently resident brains or smaller storage configurations, rather than relying on partial-brain loading.
+	
+	\begin{table}[h]
+		\centering
+		\footnotesize
+		\resizebox{\textwidth}{!}{%
+		\begin{tabular}{cccc|ccc|ccc}
+		\toprule
+		 & & & & \multicolumn{6}{c}{\textbf{GPU Memory Consumption per Brain (GiB)}} \\
+		 \cmidrule(lr){5-10}
+		 & & & & \multicolumn{3}{c|}{\textbf{float16} (2 bytes/value)} & \multicolumn{3}{c}{\textbf{float32} (4 bytes/value)} \\
+		\cmidrule(lr){5-7} \cmidrule(lr){8-10}
+		$\textbf{I}$ & $\textbf{J}$ & $\textbf{K}$ & $\textbf{N}_{\mathrm{slot}}$ & \textbf{1 Tensor} & \textbf{2 Tensors} & \textbf{3 Tensors} & \textbf{1 Tensor} & \textbf{2 Tensors} & \textbf{3 Tensors} \\
+		\midrule
+		128 & 128 & 16 & 16 & 0.04 & 0.07 & 0.10 & 0.07 & 0.14 & 0.20 \\
+		128 & 128 & 16 & 128 & 0.26 & 0.51 & 0.76 & 0.51 & 1.01 & 1.51 \\
+		128 & 128 & 16 & 1024 & 2.01 & 4.01 & 6.01 & 4.01 & 8.01 & 12.01 \\
+		128 & 128 & 128 & 16 & 0.30 & 0.55 & 0.80 & 0.59 & 1.09 & 1.59 \\
+		128 & 128 & 128 & 128 & 2.05 & 4.05 & 6.05 & 4.09 & 8.09 & 12.09 \\
+		128 & 128 & 128 & 1024 & 16.05 & 32.05 & 48.05 & 32.09 & 64.09 & 96.09 \\
+		\midrule
+		256 & 256 & 16 & 16 & 0.15 & 0.27 & 0.40 & 0.30 & 0.55 & 0.80 \\
+		256 & 256 & 16 & 128 & 1.02 & 2.02 & 3.02 & 2.05 & 4.05 & 6.05 \\
+		256 & 256 & 16 & 1024 & 8.02 & 16.02 & 24.02 & 16.05 & 32.05 & 48.05 \\
+		256 & 256 & 128 & 16 & 1.19 & 2.19 & 3.19 & 2.38 & 4.38 & 6.38 \\
+		256 & 256 & 128 & 128 & 8.19 & 16.19 & 24.19 & 16.38 & 32.38 & 48.38 \\
+		256 & 256 & 128 & 1024 & 64.19 & 128.19 & 192.19 & 128.38 & 256.38 & 384.38 \\
+		\midrule
+		512 & 512 & 16 & 16 & 0.59 & 1.09 & 1.59 & 1.19 & 2.19 & 3.19 \\
+		512 & 512 & 16 & 128 & 4.09 & 8.09 & 12.09 & 8.19 & 16.19 & 24.19 \\
+		512 & 512 & 16 & 1024 & 32.09 & 64.09 & 96.09 & 64.19 & 128.19 & 192.19 \\
+		512 & 512 & 128 & 16 & 4.75 & 8.75 & 12.75 & 9.50 & 17.50 & 25.50 \\
+		512 & 512 & 128 & 128 & 32.75 & 64.75 & 96.75 & 65.50 & 129.50 & 193.50 \\
+		512 & 512 & 128 & 1024 & 256.75 & 512.75 & 768.75 & 513.50 & 1025.50 & 1537.50 \\
+		\midrule
+		1024 & 1024 & 16 & 16 & 2.38 & 4.38 & 6.38 & 4.75 & 8.75 & 12.75 \\
+		1024 & 1024 & 16 & 128 & 16.38 & 32.38 & 48.38 & 32.75 & 64.75 & 96.75 \\
+		1024 & 1024 & 16 & 1024 & 128.38 & 256.38 & 384.38 & 256.75 & 512.75 & 768.75 \\
+		1024 & 1024 & 128 & 16 & 19.00 & 35.00 & 51.00 & 38.00 & 70.00 & 102.00 \\
+		1024 & 1024 & 128 & 128 & 131.00 & 259.00 & 387.00 & 262.00 & 518.00 & 774.00 \\
+		1024 & 1024 & 128 & 1024 & 1027.00 & 2051.00 & 3075.00 & 2054.00 & 4102.00 & 6150.00 \\
+		\midrule
+		2048 & 2048 & 16 & 16 & 9.50 & 17.50 & 25.50 & 19.00 & 35.00 & 51.00 \\
+		2048 & 2048 & 16 & 128 & 65.50 & 129.50 & 193.50 & 131.00 & 259.00 & 387.00 \\
+		2048 & 2048 & 16 & 1024 & 513.50 & 1025.50 & 1537.50 & 1027.00 & 2051.00 & 3075.00 \\
+		2048 & 2048 & 128 & 16 & 76.00 & 140.00 & 204.00 & 152.00 & 280.00 & 408.00 \\
+		2048 & 2048 & 128 & 128 & 524.00 & 1036.00 & 1548.00 & 1048.00 & 2072.00 & 3096.00 \\
+		2048 & 2048 & 128 & 1024 & 4108.00 & 8204.00 & 12300.00 & 8216.00 & 16408.00 & 24600.00 \\
+		\bottomrule
+		\end{tabular}%
+		}
+		\caption{\footnotesize{Baseline GPU storage required for one complete brain, for selected dimensions and slot capacities. The three neuronal records per neuron and $m\in\{1,2,3\}$ four-component connection records per slot give $4pIJK(3+mN_{\mathrm{slot}})$ bytes, where $p$ is 2 or 4 bytes for the indicated scalar precision. The values are expressed in GiB. Modulatory-field buffers, activity traces, separately stored eligibility traces, working buffers, and allocation overhead are excluded. Multiple simultaneously resident brains require correspondingly more memory.}}
+	\end{table}
+	
+\section{Compute Shaders}
+
+	An initial storage proposal represents neuronal and connection data in four-component groups, analogous to RGBA texture entries. This organization is convenient for fragment shaders, which naturally process image fragments in parallel. However, the brain model is not fundamentally an image-processing problem. Its main computational objects are neurons and directional connections, both of which must be updated repeatedly and, in the case of connections, may also be created, removed, or modified during the lifetime of the agent. The intended implementation therefore retains each complete brain in GPU storage buffers throughout its simulation.
+
+	For this reason, compute shaders provide a more natural implementation model. Instead of associating one execution with one rendered fragment, a compute shader launches a large number of independent GPU invocations over arbitrary data buffers. The simulation can therefore be organized directly around the mathematical objects of the model.
+
+	For example, one dispatch may assign one GPU invocation to each neuron among all brains currently resident on the GPU:
+
+	\begin{verbatim}
+	index = global_invocation_id
+
+	if index < number_of_neurons:
+		read neuron[index]
+		update state
+		update fatigue
+		update modulatory variables
+		write neuron[index]
+	\end{verbatim}
+
+	A different dispatch may assign one invocation to each allocated connection slot across those brains:
+
+	\begin{verbatim}
+	index = global_invocation_id
+
+	if index < number_of_connection_slots:
+		read connection[index]
+
+		if connection exists:
+			update eligibility trace
+			update synaptic weight
+			apply decay
+		end
+	end
+	\end{verbatim}
+
+	This organization avoids forcing the simulation into the geometry of a rendered image. Neuronal data may still be packed in groups of four floating-point values when convenient, similarly to RGBA, but these groups can simply be stored as vectors inside linear GPU buffers. For example, a neuron with linear index
+
+	$$n = i + Ij + IJk$$
+
+	may be accessed directly as
+
+	\begin{verbatim}
+	neuron = neurons[n]
+	\end{verbatim}
+
+	while, in a fixed-slot implementation, the $c$-th connection associated with this neuron may be stored at
+
+	$$q = nN_{\mathrm{slot}} + c,$$
+
+	and accessed as
+
+	\begin{verbatim}
+	connection = connections[q]
+	\end{verbatim}
+
+	The same linear indexing can be used both in the CPU reference implementation and in the GPU implementation. To store $B$ independent brains of equal dimensions in shared linear buffers, introduce an agent index $a\in\{0,\ldots,B-1\}$ and let $N=IJK$. The neuron and connection indices then become
+
+	$$n_{\mathrm{global}}=aN+i+Ij+IJk,$$
+	$$q_{\mathrm{global}}=n_{\mathrm{global}}N_{\mathrm{slot}}+c.$$
+
+	Each agent occupies a distinct interval of the buffers and retains its own neural states, connections, weights, modulatory fields, and traces. A compute dispatch may therefore process neurons or slots from several brains concurrently without allowing connections between different agents. Different brain dimensions can also be supported with per-agent offsets, although uniform dimensions simplify indexing. The number of concurrently resident brains is a memory-capacity decision, not a change to the neural model. The initial construction allows candidate connections across the full tensor depth, whereas the lifetime reconnection rules retain their separately defined local neighborhoods. Neither choice requires slices to be streamed into or out of GPU memory.
+
+	The main advantage of this approach becomes more important as the brain grows. A model containing millions of neurons may contain tens or hundreds of millions of active connection slots. Compute shaders allow these large collections to be processed with massive GPU parallelism while preserving a direct correspondence between one invocation and one simulated object. In contrast, a conventional fragment-shader implementation would require the simulation to be expressed through rendering passes, textures, and rasterization constraints that are unrelated to the underlying neural dynamics.
+
+	\begin{figure}[H]
+	\centering
+	\begin{tikzpicture}[
+		>=Latex,
+		node distance=0.8cm and 1.0cm,
+		box/.style={
+			draw,
+			rounded corners,
+			align=center,
+			minimum width=2.8cm,
+			minimum height=1.0cm,
+			fill=gray!10,
+			font=\small
+		},
+		smallbox/.style={
+			draw,
+			rounded corners,
+			align=center,
+			minimum width=2.2cm,
+			minimum height=0.8cm,
+			fill=white,
+			font=\small
+		},
+		note/.style={
+			align=center,
+			font=\footnotesize
+		}
+	]
+
+	% Sources
+	\node[smallbox] (src1) {source neuron};
+	\node[smallbox, below=0.25cm of src1] (src2) {source neuron};
+	\node[smallbox, below=0.25cm of src2] (src3) {source neuron};
+
+	% Incoming signal aggregation
+	\node[box, right=1.2cm of src2] (sum) {
+		\textbf{Incoming signals}\\
+		weighted sum through\\
+		active connections
+	};
+
+	% Neuron update
+	\node[box, right=1.2cm of sum] (update) {
+		\textbf{Neuron update}\\
+		threshold, fatigue,\\
+		retention, modulation,\\
+		and firing decision
+	};
+
+	% Outgoing
+	\node[box, right=1.2cm of update] (emit) {
+		\textbf{Outgoing signals}\\
+		transmitted through\\
+		active connections
+	};
+
+	% Arrows
+	\draw[->, thick] (src1.east) -- (sum.west);
+	\draw[->, thick] (src2.east) -- (sum.west);
+	\draw[->, thick] (src3.east) -- (sum.west);
+
+	\draw[->, thick] (sum.east) -- (update.west);
+	\draw[->, thick] (update.east) -- (emit.west);
+
+	% Parallelism explanation
+	\node[
+		box,
+		below=1.3cm of update,
+		minimum width=9.8cm,
+		minimum height=1.2cm
+	] (parallel) {
+		\textbf{Compute shader parallelism}\\
+		The same update is executed for many neurons and connections in parallel,\\
+		using simulation buffers directly rather than rendered image fragments.
+	};
+
+	\draw[dashed, ->] (sum.south) -- (parallel.north west);
+	\draw[dashed, ->] (update.south) -- (parallel.north);
+	\draw[dashed, ->] (emit.south) -- (parallel.north east);
+
+	\end{tikzpicture}
+
+	\caption{\footnotesize{
+	Schematic view of the neuronal dynamics. Each neuron receives weighted signals,
+	updates its internal state, and may then transmit signals through its outgoing
+	connections. Compute shaders are well suited to this model because the same
+	operations can be applied in parallel to large numbers of neurons and connections.
+	}}
+	\label{fig:compute_shader_motivation}
+	\end{figure}
+
+	Compute shaders are also particularly suitable for the structural plasticity of the model. Connection slots can be treated as mutable data entries rather than texels whose interpretation is constrained by the rendering pipeline. This makes operations such as changing weights, invalidating connections, updating eligibility traces, or inserting new connections considerably more direct.
+
+	The intended architecture is therefore to keep high-level simulation control, visualization, file handling, and interaction in GDScript, while transferring the large parallel numerical updates to compute shaders. Each brain remains fully allocated on the GPU between simulation steps; synchronization with the CPU is required only when dictated by the agent--environment interaction or by other application needs, not to exchange spatial slices of a brain. A simplified simulation step, applied independently to each resident brain, may be organized as follows:
+
+	\begin{verbatim}
+	1. Determine the current normalized neuronal activities, update the
+	   neuronal activity traces, firing states, refractory updates, and
+	   modulatory releases.
+
+	2. Update the modulatory field and compute the effective modulation.
+
+	3. Process every existing directional connection once:
+	   a. If the source fires, accumulate the transmitted signal using
+		  the pre-update connection weight.
+	   b. Apply ordinary Hebbian reinforcement when transmission occurs.
+	   c. Update the synaptic eligibility trace.
+	   d. Apply postsynaptic endogenous modulation.
+	   e. Apply synaptic decay and remove the connection if its weight
+		  becomes nonpositive.
+
+	4. Apply homeostatic reconnection to targets that lost their last
+	   incoming connection.
+
+	5. Advance neuronal states to the next iteration using retention and
+	   the accumulated incoming signals.
+
+	6. For each internal neuron that fired, evaluate at most one structural
+	   plasticity attempt using the neuronal activity traces.
+	\end{verbatim}
+
+	The connection-processing stage preserves the temporal order defined by the model while allowing transmission, Hebbian reinforcement, eligibility, endogenous modulation, and decay to be performed during a single traversal of the existing connections. Some stages may still require separate GPU dispatches to guarantee that quantities computed for iteration $t$, such as the firing states and modulatory field, are available to all connections before subsequent updates begin. When necessary, two buffers may be alternated in a ping-pong scheme so that one contains the previous state while the other receives the new state. This ping-pong scheme is a temporal state-update mechanism; it does not mean that only a portion of the brain is stored on the GPU.					
+				
+\end{document}
+		

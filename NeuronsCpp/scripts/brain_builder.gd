@@ -11,9 +11,12 @@ var math = Functions.new()
 ## [param num_outputs] defines the number of output neurons.
 ## [param progress_callback] optionally receives the build percentage from 0 to 100.
 ## Returns a dictionary containing the brain structure.
-func build(genome: Genome, size: Vector3i, num_inputs: int, num_outputs: int, progress_callback: Callable = Callable()) -> Dictionary:
-	if size.x < 2 or size.y < 2 or size.z < 2:
-		push_error("Brain dimensions I, J, K must all be at least 2.")
+func build(genome: Genome, size: Vector3i, num_inputs: int, num_outputs: int, progress_callback: Callable = Callable(), connections_density: float = 1.0) -> Dictionary:
+	if size.x < 2 or size.y < 2 or size.z < 2 or num_inputs < 0 or num_outputs < 0 or num_inputs + num_outputs > size.x * size.y * size.z:
+		push_error("Invalid brain dimensions or input/output counts.")
+		return {}
+	if is_nan(connections_density) or is_inf(connections_density) or connections_density <= 0.0:
+		push_error("Connections density eta must be positive and finite.")
 		return {}
 
 	_report_progress(progress_callback, 0)
@@ -23,7 +26,8 @@ func build(genome: Genome, size: Vector3i, num_inputs: int, num_outputs: int, pr
 	var brain = {
 		"size": size,
 		"beta": beta,
-		"max_connections": floori(math.F(beta, genome.max_connections)),
+		"max_connections": maxi(1, floori(connections_density * math.F(beta, genome.max_connections))),
+		"connections_density": connections_density,
 		"refractory_strength": math.F(0.4, genome.refractory_strength),
 		"exponential_factor": math.F(0.4, genome.exponential_factor),
 		"structural_plasticity": math.P(genome.structural_plasticity),
@@ -44,7 +48,7 @@ func build(genome: Genome, size: Vector3i, num_inputs: int, num_outputs: int, pr
 	print('B: ', (end - start)/1000.0, ' seconds')
 	
 	start = Time.get_ticks_msec()
-	_create_connections(brain, genome.connections, progress_callback)
+	_create_connections(brain, genome.connections, genome.initial_search_region, progress_callback)
 	end = Time.get_ticks_msec()
 	print('C: ', (end - start)/1000.0, ' seconds')
 	
@@ -150,7 +154,7 @@ func _set_input_output_neurons(neurons: Array, size: Vector3i, num_inputs: int, 
 ## [param brain] contains the brain structure.
 ## [param gene] is used to create the connections.
 ## Returns nothing.
-func _create_connections(brain: Dictionary, gene: Array, progress_callback: Callable) -> void:
+func _create_connections(brain: Dictionary, gene: Array, search_gene: Array, progress_callback: Callable) -> void:
 	var size: Vector3i = brain["size"]
 	var neurons: Array = brain["neurons"]
 	var total_neurons: int = neurons.size()
@@ -172,6 +176,15 @@ func _create_connections(brain: Dictionary, gene: Array, progress_callback: Call
 
 	# These coefficients depend only on the connection gene, so calculate them once.
 	var h_coefficients: Vector4 = math.H_coefficients(gene)
+	var search_extent: float = math.S(search_gene)
+	var radius_i: int = mini(size.x - 1, ceili(search_extent * size.x))
+	var radius_j: int = mini(size.y - 1, ceili(search_extent * size.y))
+	var radius_k: int = mini(size.z - 1, ceili(search_extent * size.z))
+	brain["initial_search_extent"] = search_extent
+	brain["initial_search_radius_i"] = radius_i
+	brain["initial_search_radius_j"] = radius_j
+	brain["initial_search_radius_k"] = radius_k
+	var supplementary_offsets: Array[Vector3i] = _supplementary_offsets(search_gene, size.x, size.y, size.z, radius_i, radius_j, radius_k)
 
 	var group_task_id = WorkerThreadPool.add_group_task(
 		_create_connections_for_neuron.bind(
@@ -180,7 +193,11 @@ func _create_connections(brain: Dictionary, gene: Array, progress_callback: Call
 			brain["max_connections"],
 			h_coefficients,
 			connection_values,
-			connection_results
+			connection_results,
+			radius_i,
+			radius_j,
+			radius_k,
+			supplementary_offsets
 		),
 		total_neurons
 	)
@@ -207,53 +224,130 @@ func _create_connections(brain: Dictionary, gene: Array, progress_callback: Call
 
 ## Calculates the outgoing connections of one source neuron.
 ## This method is called concurrently by WorkerThreadPool.
-func _create_connections_for_neuron(neuron_index: int, neurons: Array, size: Vector3i, max_connections: int, h_coefficients: Vector4, connection_values: PackedFloat64Array, connection_results: Array) -> void:
+# A fixed cyclic ordering of all 5985 four-position combinations.
+func _rotate_quad(q: Array[int], rotation: int) -> Array[int]:
+	var result: Array[int] = []
+	for index in q:
+		result.append((index + rotation) % 21)
+	result.sort()
+	return result
+
+func _quad_less(a: Array[int], b: Array[int]) -> bool:
+	for t in 4:
+		if a[t] != b[t]:
+			return a[t] < b[t]
+	return false
+
+func _four_decimal(gene: Array, start: int, q: Array[int]) -> int:
+	var number: int = 0
+	for index in q:
+		number = number * 10 + int(gene[start + index])
+	return number
+
+func _supplementary_offsets(gene: Array, I: int, J: int, K: int, radius_i: int, radius_j: int, radius_k: int) -> Array[Vector3i]:
+	var offsets: Array[Vector3i] = []
+	var Di: int = I - radius_i - 1
+	var Dj: int = J - radius_j - 1
+	var Dk: int = K - radius_k - 1
+	if Di <= 0 and Dj <= 0 and Dk <= 0:
+		return offsets
+
+	var first: Array[int] = [0, 5, 10, 15]
+	var first_canonical: Array[int] = first
+	for h in range(1, 21):
+		var rotated := _rotate_quad(first, h)
+		if _quad_less(rotated, first_canonical):
+			first_canonical = rotated
+	var quadruples: Array = []
+	for h in 21:
+		quadruples.append(_rotate_quad(first, h))
+	for a in range(18):
+		for b in range(a + 1, 19):
+			for c in range(b + 1, 20):
+				for d in range(c + 1, 21):
+					var q: Array[int] = [a, b, c, d]
+					if q == first_canonical:
+						continue
+					var canonical: bool = true
+					for h in range(1, 21):
+						if _quad_less(_rotate_quad(q, h), q):
+							canonical = false
+							break
+					if canonical:
+						for h in 21:
+							quadruples.append(_rotate_quad(q, h))
+	assert(quadruples.size() == 5985)
+	for t in quadruples.size():
+		var q: Array[int] = quadruples[t]
+		var a: int = _four_decimal(gene, 0, q) % I
+		var b: int = _four_decimal(gene, 21, q) % J
+		var c: int = _four_decimal(gene, 42, q) % K
+		for shift in 3:
+			var axis: int = (t + shift) % 3
+			if axis == 0 and Di > 0:
+				offsets.append(Vector3i(radius_i + 1 + a % Di, b, c))
+				break
+			if axis == 1 and Dj > 0:
+				offsets.append(Vector3i(a, radius_j + 1 + b % Dj, c))
+				break
+			if axis == 2 and Dk > 0:
+				offsets.append(Vector3i(a, b, radius_k + 1 + c % Dk))
+				break
+	return offsets
+
+## Two initial passes: strongest positive H inside the genetic neighborhood,
+## then at most N_max individually tested signed supplementary candidates.
+func _create_connections_for_neuron(neuron_index: int, neurons: Array, size: Vector3i, max_connections: int, h_coefficients: Vector4, connection_values: PackedFloat64Array, connection_results: Array, radius_i: int, radius_j: int, radius_k: int, supplementary_offsets: Array[Vector3i]) -> void:
 	if max_connections <= 0 or neurons[neuron_index]["output"]:
 		connection_results[neuron_index] = []
 		return
-
 	var pos: Vector3i = neurons[neuron_index]["position"]
 	var I: int = size.x
 	var J: int = size.y
 	var K: int = size.z
 	var IJ: int = I * J
-	var source_linear_index: int = pos.x + I * pos.y + IJ * pos.z
-	var A_ijk: float = connection_values[source_linear_index]
-	var target_k_min: int = maxi(0, pos.z - 2)
-	var target_k_max: int = mini(K - 1, pos.z + 2)
+	var A_ijk: float = connection_values[pos.x + I * pos.y + IJ * pos.z]
 	var candidates: Array = []
-
-	for u in I:
-		var u_equals_posx: bool = u == pos.x
-
-		for v in J:
-			var Iv: int = I * v
-			var v_equals_posy: bool = v == pos.y
-
-			for w in range(target_k_min, target_k_max + 1):
-				if u_equals_posx and v_equals_posy and w == pos.z:
+	for u in range(maxi(0, pos.x - radius_i), mini(I - 1, pos.x + radius_i) + 1):
+		for v in range(maxi(0, pos.y - radius_j), mini(J - 1, pos.y + radius_j) + 1):
+			for w in range(maxi(0, pos.z - radius_k), mini(K - 1, pos.z + radius_k) + 1):
+				if u == pos.x and v == pos.y and w == pos.z:
 					continue
-
-				var target_linear_index: int = u + Iv + IJ * w
-				var A_uvw: float = connection_values[target_linear_index]
-				var h := math.H(A_ijk, A_uvw, h_coefficients)
-				
+				var target_index: int = u + I * v + IJ * w
+				var h: float = math.H(A_ijk, connection_values[target_index], h_coefficients)
 				if h > 0.0:
 					candidates.append({"target": Vector3i(u, v, w), "value": h})
-
-	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["value"] > b["value"])
-
-	var connection_count: int = mini(max_connections, candidates.size())
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["value"] > b["value"] or (a["value"] == b["value"] and (a["target"].x + I * a["target"].y + IJ * a["target"].z) < (b["target"].x + I * b["target"].y + IJ * b["target"].z)))
+	var count: int = mini(max_connections, candidates.size())
 	var connections: Array = []
-	connections.resize(connection_count)
-
-	for index in connection_count:
-		connections[index] = {
-			"target": candidates[index]["target"],
-			"weight": candidates[index]["value"],
-			"eligibility_trace": 0.0,
-		}
-
+	var seen: Dictionary = {}
+	for idx in count:
+		var candidate: Dictionary = candidates[idx]
+		var target: Vector3i = candidate["target"]
+		connections.append({"target": target, "weight": candidate["value"], "eligibility_trace": 0.0, "_construction_pass": 0})
+		seen[target.x + I * target.y + IJ * target.z] = true
+	if count < max_connections:
+		var attempts: int = 0
+		for delta in supplementary_offsets:
+			for sign in 8:
+				if attempts >= max_connections or connections.size() >= max_connections:
+					connection_results[neuron_index] = connections
+					return
+				attempts += 1
+				var u: int = pos.x + (-delta.x if (sign & 4) != 0 else delta.x)
+				var v: int = pos.y + (-delta.y if (sign & 2) != 0 else delta.y)
+				var w: int = pos.z + (-delta.z if (sign & 1) != 0 else delta.z)
+				if u < 0 or u >= I or v < 0 or v >= J or w < 0 or w >= K:
+					continue
+				if u == pos.x and v == pos.y and w == pos.z:
+					continue
+				var target_index: int = u + I * v + IJ * w
+				if seen.has(target_index):
+					continue
+				seen[target_index] = true
+				var h: float = math.H(A_ijk, connection_values[target_index], h_coefficients)
+				if h > 0.0:
+					connections.append({"target": Vector3i(u, v, w), "weight": h, "eligibility_trace": 0.0, "_construction_pass": 1})
 	connection_results[neuron_index] = connections
 
 ## Removes connections forbidden for input and output neurons, rescues isolated neurons
@@ -281,6 +375,8 @@ func _clear_invalid_connections(brain: Dictionary, gene: Array, input_influence_
 
 	var completed = 0
 	var report_interval = maxi(1, int(total_neurons / 100.0))
+	brain["initial_connections_first_pass"] = 0
+	brain["initial_connections_second_pass"] = 0
 
 	for neuron in neurons:
 		var valid_connections = []
@@ -301,6 +397,11 @@ func _clear_invalid_connections(brain: Dictionary, gene: Array, input_influence_
 			if neuron["output"]:
 				continue
 
+			if connection.get("_construction_pass", 0) == 0:
+				brain["initial_connections_first_pass"] += 1
+			elif connection.get("_construction_pass", 0) == 1:
+				brain["initial_connections_second_pass"] += 1
+			connection.erase("_construction_pass")
 			valid_connections.append(connection)
 			incoming_connections[target_spatial_index] += 1
 
@@ -328,6 +429,8 @@ func _clear_invalid_connections(brain: Dictionary, gene: Array, input_influence_
 		elif incoming_count == 0:
 			isolated_internal_before += 1
 
+	brain["initial_local_connections"] = brain["initial_connections_first_pass"]
+	brain["initial_additional_connections"] = brain["initial_connections_second_pass"]
 	brain["isolated_before_rescue"] = {
 		"internal": isolated_internal_before,
 		"output": isolated_output_before,
@@ -412,7 +515,7 @@ func _clear_invalid_connections(brain: Dictionary, gene: Array, input_influence_
 		var attenuation: float = 1.0 - source_a * source_a
 
 		for connection in neuron["connections"]:
-			var initial_weight: float = float(connection["weight"]) * attenuation
+			var initial_weight: float = maxf(0.1, float(connection["weight"]) * attenuation)
 			if neuron["input"]:
 				# Keep the existing minimum initial weight for input synapses.
 				initial_weight = maxf(initial_weight, input_min_weight)
@@ -424,7 +527,7 @@ func _clear_invalid_connections(brain: Dictionary, gene: Array, input_influence_
 ## Creates the minimum connectivity required to rescue isolated neurons when possible.
 ## Internal and output neurons without incoming connections receive exactly one incoming connection.
 ## Input neurons without outgoing connections receive exactly one outgoing connection.
-## Existing connections are never removed or redirected. Every new connection must satisfy H > 0,
+## Existing connections are never removed or redirected. Rescued candidates maximize H squared,
 ## obey the normal input/output restrictions, and respect a temporary rescue limit of
 ## ceil(1.01 * N_max) + 1 outgoing connections per source neuron.
 ## Returns false when any isolated neuron cannot be rescued under these rules.
@@ -443,6 +546,8 @@ func _rescue_isolated_neurons(brain: Dictionary, gene: Array, neuron_by_spatial_
 	var no_positive_h_candidate = 0
 	var positive_h_candidates_saturated = 0
 	var input_source_saturated = 0
+	var rescue_candidates_receiver: int = 0
+	var rescue_candidates_input: int = 0
 
 	# Internal and output neurons require at least one incoming connection.
 	for neuron in neurons:
@@ -462,52 +567,31 @@ func _rescue_isolated_neurons(brain: Dictionary, gene: Array, neuron_by_spatial_
 		var target_position: Vector3i = target["position"]
 		var target_spatial_index: int = target_position.x + I * target_position.y + IJ * target_position.z
 		var target_connection_value: float = target["connections_value"]
-		var source_k_min: int = maxi(0, target_position.z - 2)
-		var source_k_max: int = mini(K - 1, target_position.z + 2)
 		var best_source: Dictionary = {}
 		var best_h: float = 0.0
-		var structural_candidates = 0
-		var positive_h_candidates = 0
-		var free_positive_h_candidates = 0
-
-		for source_k in range(source_k_min, source_k_max + 1):
-			var slice_offset: int = IJ * source_k
-
-			for source_j in J:
-				var row_offset: int = slice_offset + I * source_j
-
-				for source_i in I:
-					var source_spatial_index: int = row_offset + source_i
-
-					if source_spatial_index == target_spatial_index:
-						continue
-
-					var source: Dictionary = neuron_by_spatial_index[source_spatial_index]
-
-					# Output neurons never emit signals.
-					if source["output"]:
-						continue
-
-					# Output neurons may receive incoming connections only from internal neurons.
-					if target["output"] and source["input"]:
-						continue
-
-					structural_candidates += 1
-					var h: float = math.H(float(source["connections_value"]), target_connection_value, h_coefficients)
-
-					if h <= 0.0:
-						continue
-
-					positive_h_candidates += 1
-
-					if source["connections"].size() >= max_connections:
-						continue
-
-					free_positive_h_candidates += 1
-
-					if h > best_h:
-						best_h = h
-						best_source = source
+		var structural_candidates: int = 0
+		var positive_h_candidates: int = 0
+		var free_positive_h_candidates: int = 0
+		for delta in [Vector3i(0, 0, -1), Vector3i(0, -1, 0), Vector3i(-1, 0, 0), Vector3i(1, 0, 0), Vector3i(0, 1, 0), Vector3i(0, 0, 1)]:
+			var neighbor: Vector3i = target_position + delta
+			if neighbor.x < 0 or neighbor.x >= I or neighbor.y < 0 or neighbor.y >= J or neighbor.z < 0 or neighbor.z >= K:
+				continue
+			var source: Dictionary = neuron_by_spatial_index[neighbor.x + I * neighbor.y + IJ * neighbor.z]
+			if source["output"] or (target["output"] and source["input"]):
+				continue
+			structural_candidates += 1
+			var h: float = math.H(float(source["connections_value"]), target_connection_value, h_coefficients)
+			rescue_candidates_receiver += 1
+			var h_squared: float = h * h
+			if h_squared <= 0.0:
+				continue
+			positive_h_candidates += 1
+			if source["connections"].size() >= max_connections:
+				continue
+			free_positive_h_candidates += 1
+			if h_squared > best_h:
+				best_h = h_squared
+				best_source = source
 
 		if best_source.is_empty():
 			rescue_success = false
@@ -550,40 +634,30 @@ func _rescue_isolated_neurons(brain: Dictionary, gene: Array, neuron_by_spatial_
 
 		var source_position: Vector3i = source["position"]
 		var source_connection_value: float = source["connections_value"]
-		var target_k_min: int = maxi(0, source_position.z - 2)
-		var target_k_max: int = mini(K - 1, source_position.z + 2)
 		var best_target: Dictionary = {}
 		var best_target_spatial_index: int = -1
 		var best_input_h: float = 0.0
-		var structural_targets = 0
-		var positive_h_targets = 0
-
-		for target_k in range(target_k_min, target_k_max + 1):
-			var slice_offset: int = IJ * target_k
-
-			for target_j in J:
-				var row_offset: int = slice_offset + I * target_j
-
-				for target_i in I:
-					var target_spatial_index: int = row_offset + target_i
-					var target: Dictionary = neuron_by_spatial_index[target_spatial_index]
-
-					# Inputs can connect only to internal neurons.
-					if target["input"] or target["output"]:
-						continue
-
-					structural_targets += 1
-					var h: float = math.H(source_connection_value, float(target["connections_value"]), h_coefficients)
-
-					if h <= 0.0:
-						continue
-
-					positive_h_targets += 1
-
-					if h > best_input_h:
-						best_input_h = h
-						best_target = target
-						best_target_spatial_index = target_spatial_index
+		var structural_targets: int = 0
+		var positive_h_targets: int = 0
+		for delta in [Vector3i(0, 0, -1), Vector3i(0, -1, 0), Vector3i(-1, 0, 0), Vector3i(1, 0, 0), Vector3i(0, 1, 0), Vector3i(0, 0, 1)]:
+			var neighbor: Vector3i = source_position + delta
+			if neighbor.x < 0 or neighbor.x >= I or neighbor.y < 0 or neighbor.y >= J or neighbor.z < 0 or neighbor.z >= K:
+				continue
+			var target_index: int = neighbor.x + I * neighbor.y + IJ * neighbor.z
+			var target: Dictionary = neuron_by_spatial_index[target_index]
+			if target["input"] or target["output"]:
+				continue
+			structural_targets += 1
+			var h: float = math.H(source_connection_value, float(target["connections_value"]), h_coefficients)
+			rescue_candidates_input += 1
+			var h_squared: float = h * h
+			if h_squared <= 0.0:
+				continue
+			positive_h_targets += 1
+			if h_squared > best_input_h:
+				best_input_h = h_squared
+				best_target = target
+				best_target_spatial_index = target_index
 
 		if best_target.is_empty():
 			rescue_success = false
@@ -604,6 +678,9 @@ func _rescue_isolated_neurons(brain: Dictionary, gene: Array, neuron_by_spatial_
 
 		_report_progress(progress_callback, 99 + int(float(isolated_index + 1) / isolated_input_count))
 
+	brain["rescue_candidates_receiver"] = rescue_candidates_receiver
+	brain["rescue_candidates_input"] = rescue_candidates_input
+	brain["rescue_candidates_total"] = rescue_candidates_receiver + rescue_candidates_input
 	brain["rescue_failure_causes"] = {
 		"no_structural_candidate": no_structural_candidate,
 		"no_positive_h_candidate": no_positive_h_candidate,

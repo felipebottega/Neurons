@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://dy387luk1bidj"
+path="res://.godot/imported/brain_population_homeostasis.glsl-c9a8675168abe14503b459e6d89cda92.res"
+
+[deps]
+
+source_file="res://shaders/brain_population_homeostasis.glsl"
+dest_files=["res://.godot/imported/brain_population_homeostasis.glsl-c9a8675168abe14503b459e6d89cda92.res"]
+
+[params]
+

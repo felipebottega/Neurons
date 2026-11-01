@@ -5,6 +5,7 @@ const GENE_SPECS = {
 	"max_connections": 8,
 	"beta": 8,
 	"connections": 64,
+	"initial_search_region": 64,
 	"activation_threshold": 64,
 	"refractory_strength": 8,
 	"exponential_factor": 8,
@@ -22,6 +23,7 @@ const GENE_SPECS = {
 const GENE_ORDER = [
 	"max_connections",
 	"connections",
+	"initial_search_region",
 	"activation_threshold",
 	"refractory_strength",
 	"exponential_factor",
@@ -40,6 +42,7 @@ const GENE_ORDER = [
 const GENE_LABELS = {
 	"max_connections": "Maximum connections",
 	"connections": "Connections",
+	"initial_search_region": "Initial search region",
 	"activation_threshold": "Activation threshold",
 	"refractory_strength": "Refractory strength",
 	"exponential_factor": "Exponential factor",
@@ -59,6 +62,7 @@ const EXTERNAL_PARAMETER_NAMES = [
 	"size_x",
 	"size_y",
 	"size_z",
+	"connections_density",
 	"num_inputs",
 	"num_outputs"
 ]
@@ -67,6 +71,7 @@ const EXTERNAL_PARAMETER_LABELS = {
 	"size_x": "Size X",
 	"size_y": "Size Y",
 	"size_z": "Size Z",
+	"connections_density": "Connections density",
 	"num_inputs": "Inputs",
 	"num_outputs": "Outputs"
 }
@@ -270,6 +275,8 @@ func _load_brain_configuration(path: String) -> void:
 	var data = JSON.parse_string(file.get_as_text())
 
 	_migrate_legacy_retention_factor_key(data)
+	_migrate_legacy_initial_search_region(data)
+	_migrate_legacy_connections_density(data)
 
 	if not _is_valid_genome_file(data):
 		summary_error_label.text = "Invalid brain configuration file:\n%s" % path
@@ -329,6 +336,19 @@ func _migrate_legacy_retention_factor_key(data: Variant) -> void:
 
 
 ## Returns true when the parsed JSON contains every field required by BrainBuilder.
+func _migrate_legacy_initial_search_region(data: Variant) -> void:
+	if not (data is Dictionary) or not data.has("genome") or not (data["genome"] is Dictionary):
+		return
+	var genes: Dictionary = data["genome"]
+	if not genes.has("initial_search_region") and genes.has("connections"):
+		genes["initial_search_region"] = genes["connections"]
+
+func _migrate_legacy_connections_density(data: Variant) -> void:
+	if data is Dictionary and data.has("external_parameters") and data["external_parameters"] is Dictionary:
+		var external: Dictionary = data["external_parameters"]
+		if not external.has("connections_density"):
+			external["connections_density"] = "1"
+
 func _is_valid_genome_file(data: Variant) -> bool:
 	if not (data is Dictionary):
 		return false
@@ -351,7 +371,13 @@ func _is_valid_genome_file(data: Variant) -> bool:
 		if not (parameter_text is String):
 			return false
 
-		if parameter_text.is_empty() or _filter_characters(parameter_text, "0123456789") != parameter_text:
+		if parameter_name == "connections_density":
+			if not parameter_text.is_valid_float():
+				return false
+			var eta := float(parameter_text)
+			if is_nan(eta) or is_inf(eta) or eta <= 0.0:
+				return false
+		elif parameter_text.is_empty() or _filter_characters(parameter_text, "0123456789") != parameter_text:
 			return false
 
 	for gene_name in GENE_ORDER:
@@ -555,7 +581,8 @@ func _build_brains_thread() -> Dictionary:
 		size,
 		num_inputs,
 		num_outputs,
-		_set_generation_progress_from_thread.bind(1)
+		_set_generation_progress_from_thread.bind(1),
+		float(external["connections_density"])
 	)
 	var time_1 := (Time.get_ticks_msec() - start_1) / 1000.0
 
@@ -568,7 +595,8 @@ func _build_brains_thread() -> Dictionary:
 		size,
 		num_inputs,
 		num_outputs,
-		_set_generation_progress_from_thread.bind(2)
+		_set_generation_progress_from_thread.bind(2),
+		float(external["connections_density"])
 	)
 	var time_2 := (Time.get_ticks_msec() - start_2) / 1000.0
 
@@ -639,6 +667,7 @@ func _update_summary(first_brain: Dictionary, second_brain: Dictionary, time_1: 
 		"Dimensions: %d x %d x %d\n" % [int(external["size_x"]), int(external["size_y"]), int(external["size_z"])]
 		+ "Inputs: %d    Outputs: %d\n" % [int(external["num_inputs"]), int(external["num_outputs"])]
 		+ "Beta: %.6f vs %.6f\n" % [first_brain["beta"], second_brain["beta"]]
+		+ "Connections density eta: %.6f\n" % float(external["connections_density"])
 		+ "Maximum connections per neuron: %d vs %d\n" % [first_brain["max_connections"], second_brain["max_connections"]]
 		+ "Existing directional connections: %d vs %d\n" % [stats_1["total_connections"], stats_2["total_connections"]]
 		+ "Shared directional connections: %d / %d (%.2f%%)\n" % [

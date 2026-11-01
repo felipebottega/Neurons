@@ -233,6 +233,12 @@ var invalid_brains = 0
 var brains_requiring_rescue = 0
 var brains_rescued_successfully = 0
 
+# Counts of actual directed synapses, not attempted candidates.
+var initial_connection_sum = 0
+var initial_first_pass_sum = 0
+var initial_second_pass_sum = 0
+var rescue_connection_sum = 0
+
 var isolated_before_internal = 0
 var isolated_before_output = 0
 var isolated_before_input = 0
@@ -271,6 +277,7 @@ var last_plot_generated = -1
 
 var run_start_msec = 0
 var run_end_msec = 0
+var worker_error: String = ""
 
 
 func _ready() -> void:
@@ -281,8 +288,11 @@ func _ready() -> void:
 	$Start.pressed.connect(_on_start_pressed)
 	$Stop.pressed.connect(_on_stop_pressed)
 
-	for field in [$LineEdit, $LineEdit2, $LineEdit3, $LineEdit4, $LineEdit5]:
+	for field in [$LineEdit, $LineEdit2, $LineEdit3, $LineEdit4, $LineEdit5, $LineEdit6]:
 		field.text_changed.connect(_on_external_parameter_changed)
+	$LineEdit6.tooltip_text = "Connections density eta (> 0); 1 restores the original genetic ceiling."
+	if $LineEdit6.text.is_empty():
+		$LineEdit6.text = "1"
 
 	$BrainInfoLabel.size = Vector2(390.0, 780.0)
 	$BrainInfoLabel.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -414,7 +424,18 @@ func _validate_form() -> void:
 		$Start.disabled = true
 		return
 
+	if not _valid_connections_density($LineEdit6.text):
+		$Start.disabled = true
+		return
+
 	$Start.disabled = false
+
+
+func _valid_connections_density(value: String) -> bool:
+	if not value.is_valid_float():
+		return false
+	var eta := float(value)
+	return not is_nan(eta) and not is_inf(eta) and eta > 0.0
 
 
 func _on_start_pressed() -> void:
@@ -432,6 +453,7 @@ func _on_start_pressed() -> void:
 	)
 	var num_inputs = int($LineEdit4.text)
 	var num_outputs = int($LineEdit5.text)
+	var connections_density := float($LineEdit6.text)
 
 	_reset_statistics()
 
@@ -450,7 +472,7 @@ func _on_start_pressed() -> void:
 
 	generation_thread = Thread.new()
 	var error = generation_thread.start(
-		_generation_loop.bind(size, num_inputs, num_outputs)
+		_generation_loop.bind(size, num_inputs, num_outputs, connections_density)
 	)
 
 	if error != OK:
@@ -477,7 +499,14 @@ func _on_stop_pressed() -> void:
 	_update_summary()
 
 
-func _generation_loop(size: Vector3i, num_inputs: int, num_outputs: int) -> void:
+func _set_worker_error(message: String) -> void:
+	state_mutex.lock()
+	worker_error = message
+	stop_requested = true
+	state_mutex.unlock()
+
+
+func _generation_loop(size: Vector3i, num_inputs: int, num_outputs: int, connections_density: float) -> void:
 	"""
 	Input: fixed external brain parameters.
 	Output: continuously generates random genomes and records brain validity statistics until Stop is requested.
@@ -497,7 +526,8 @@ func _generation_loop(size: Vector3i, num_inputs: int, num_outputs: int) -> void
 			size,
 			num_inputs,
 			num_outputs,
-			_set_generation_progress_from_thread
+			_set_generation_progress_from_thread,
+			connections_density
 		)
 
 		# GenomeNative inherits RefCounted; Godot releases it automatically.
@@ -546,12 +576,20 @@ func _record_brain(brain: Dictionary) -> void:
 	var rescue_bin_index = clampi(int(floor(rescue_need_percentage / RESCUE_BIN_WIDTH)), 0, RESCUE_BIN_COUNT - 1)
 	var reciprocity = _calculate_reciprocity(brain)
 	var reciprocal_rate = float(reciprocity["rate"])
+	var first_pass_connections: int = int(brain.get("initial_local_connections", 0))
+	var second_pass_connections: int = int(brain.get("initial_additional_connections", 0))
+	var initial_connections: int = first_pass_connections + second_pass_connections
+	var rescue_connections: int = int(brain.get("rescue_edge_count", 0))
 	var directional_connections = int(reciprocity["total"])
 	var reciprocal_directional_connections = int(reciprocity["reciprocal"])
 
 	state_mutex.lock()
 
 	generated_brains += 1
+	initial_connection_sum += initial_connections
+	initial_first_pass_sum += first_pass_connections
+	initial_second_pass_sum += second_pass_connections
+	rescue_connection_sum += rescue_connections
 	rescue_need_counts[rescue_bin_index] += 1
 	rescue_need_rate_sum += rescue_need_percentage
 	rescue_need_rate_squared_sum += rescue_need_percentage * rescue_need_percentage
@@ -677,6 +715,7 @@ func _update_summary() -> void:
 	state_mutex.lock()
 
 	var local_stop_requested = stop_requested
+	var local_worker_error = worker_error
 	var local_progress = generation_progress
 	var local_current_brain = current_brain_number
 	var local_generated = generated_brains
@@ -684,6 +723,10 @@ func _update_summary() -> void:
 	var local_invalid = invalid_brains
 	var local_requiring_rescue = brains_requiring_rescue
 	var local_rescued = brains_rescued_successfully
+	var local_initial_connection_sum = initial_connection_sum
+	var local_initial_first_pass_sum = initial_first_pass_sum
+	var local_initial_second_pass_sum = initial_second_pass_sum
+	var local_rescue_connection_sum = rescue_connection_sum
 
 	var local_before_internal = isolated_before_internal
 	var local_before_output = isolated_before_output
@@ -718,7 +761,7 @@ func _update_summary() -> void:
 	state_mutex.unlock()
 
 	var running = _is_generating()
-	var status = "Stopped"
+	var status = "Failed" if not local_worker_error.is_empty() else "Stopped"
 
 	if running:
 		status = "Stopping after current brain..." if local_stop_requested else "Running"
@@ -738,6 +781,10 @@ func _update_summary() -> void:
 	var invalid_percentage = 0.0
 	var rescue_success_percentage = 0.0
 	var brains_per_second = 0.0
+	var mean_initial_connections = 0.0
+	var first_pass_percentage = 0.0
+	var second_pass_percentage = 0.0
+	var mean_rescue_connections = 0.0
 	var mean_valid_max_connections = 0.0
 	var mean_invalid_max_connections = 0.0
 	var mean_reciprocal_rate = 0.0
@@ -749,6 +796,11 @@ func _update_summary() -> void:
 	var displayed_reciprocal_rate_max = 0.0
 
 	if local_generated > 0:
+		mean_initial_connections = float(local_initial_connection_sum) / local_generated
+		if local_initial_connection_sum > 0:
+			first_pass_percentage = 100.0 * float(local_initial_first_pass_sum) / float(local_initial_connection_sum)
+			second_pass_percentage = 100.0 * float(local_initial_second_pass_sum) / float(local_initial_connection_sum)
+		mean_rescue_connections = float(local_rescue_connection_sum) / local_generated
 		valid_percentage = 100.0 * local_valid / local_generated
 		invalid_percentage = 100.0 * local_invalid / local_generated
 		mean_reciprocal_rate = local_reciprocal_rate_sum / local_generated
@@ -813,8 +865,9 @@ func _update_summary() -> void:
 		]
 
 	$BrainInfoLabel.text = (
-		"Random Brain Validity Experiment\n"
+		"RANDOM BRAIN VALIDITY EXPERIMENT\n"
 		+ "Status: %s\n" % status
+		+ ("Error: %s\n" % local_worker_error if not local_worker_error.is_empty() else "")
 		+ progress_text
 		+ "Generated brains: %d\n" % local_generated
 		+ "Valid brains: %d (%.2f%%)\n" % [local_valid, valid_percentage]
@@ -828,6 +881,9 @@ func _update_summary() -> void:
 			rescued_isolated_neurons,
 			rescued_isolated_percentage
 		]
+		+ "Mean initial connections / brain: %.2f\n" % mean_initial_connections
+		+ "Initial connections (1st/2nd pass): %.1f%% / %.1f%%\n" % [first_pass_percentage, second_pass_percentage]
+		+ "Mean connections added by rescue / brain: %.2f\n" % mean_rescue_connections
 		+ "\nIsolated neurons before rescue: %d\n" % before_total
 		+ "     Internal without incoming: %d\n" % local_before_internal
 		+ "     Output without incoming: %d\n" % local_before_output
@@ -871,6 +927,7 @@ func _reset_statistics() -> void:
 	state_mutex.lock()
 
 	stop_requested = false
+	worker_error = ""
 	generation_progress = 0
 	current_brain_number = 0
 
@@ -880,6 +937,10 @@ func _reset_statistics() -> void:
 
 	brains_requiring_rescue = 0
 	brains_rescued_successfully = 0
+	initial_connection_sum = 0
+	initial_first_pass_sum = 0
+	initial_second_pass_sum = 0
+	rescue_connection_sum = 0
 
 	isolated_before_internal = 0
 	isolated_before_output = 0
@@ -973,9 +1034,9 @@ func _build_nmax_bins(total_counts: Dictionary, valid_counts: Dictionary) -> Arr
 func _set_external_fields_editable(editable: bool) -> void:
 	"""
 	Input: whether the external parameter fields may be edited.
-	Output: applies the editability state to all five fields.
+	Output: applies the editability state to all six fields.
 	"""
-	for field in [$LineEdit, $LineEdit2, $LineEdit3, $LineEdit4, $LineEdit5]:
+	for field in [$LineEdit, $LineEdit2, $LineEdit3, $LineEdit4, $LineEdit5, $LineEdit6]:
 		field.editable = editable
 
 

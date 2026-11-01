@@ -763,42 +763,17 @@ func _apply_structural_plasticity() -> int:
 
 	return added_connections
 
-## Selects one random neuron uniformly from the source neuron's geometric connection region.
-## The source neuron itself is excluded without retrying or allocating a candidate array.
+## Selects one random neuron uniformly from the whole brain, excluding the source.
+## The source neuron itself is skipped without retrying or allocating a candidate array.
 func _random_structural_target_index(source_index: int) -> int:
-	var size: Vector3i = brain["size"]
-	var I = size.x
-	var J = size.y
-	var K = size.z
-	var IJ = I * J
-	var source_position: Vector3i = brain["neurons"][source_index]["position"]
-	var target_k_min = maxi(0, source_position.z - 2)
-	var target_k_max = mini(K - 1, source_position.z + 2)
-	var slice_count = target_k_max - target_k_min + 1
-	var candidate_count = IJ * slice_count - 1
-
-	if candidate_count <= 0:
+	var n: int = brain["neurons"].size()
+	if n < 2:
 		return -1
-
-	var source_slot = (
-		source_position.x
-		+ I * source_position.y
-		+ IJ * (source_position.z - target_k_min)
-	)
-	var random_slot = structural_rng.randi_range(0, candidate_count - 1)
-
-	# Map [0, candidate_count) onto the complete local region while skipping the source slot.
-	if random_slot >= source_slot:
-		random_slot += 1
-
-	var local_k = int(random_slot / IJ)
-	var within_slice = random_slot % IJ
-	var u = within_slice % I
-	var v = int(within_slice / I)
-	var w = target_k_min + local_k
-	var spatial_index = u + I * v + IJ * w
-
-	return neuron_index_by_spatial_index[spatial_index]
+	# Uniform over all brain neurons excluding the source, as in the current model.
+	var selected: int = structural_rng.randi_range(0, n - 2)
+	if selected >= source_index:
+		selected += 1
+	return selected
 
 
 ## Calculates the initial connection statistics once when a brain is associated with the runtime.

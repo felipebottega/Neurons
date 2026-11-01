@@ -5,6 +5,7 @@ const GENE_SPECS = {
 	"max_connections": 8,
 	"beta": 8,
 	"connections": 64,
+	"initial_search_region": 64,
 	"activation_threshold": 64,
 	"refractory_strength": 8,
 	"exponential_factor": 8,
@@ -22,6 +23,7 @@ const GENE_SPECS = {
 const GENE_ORDER = [
 	"max_connections",
 	"connections",
+	"initial_search_region",
 	"activation_threshold",
 	"refractory_strength",
 	"exponential_factor",
@@ -41,6 +43,7 @@ const EXTERNAL_PARAMETER_NAMES = [
 	"size_x",
 	"size_y",
 	"size_z",
+	"connections_density",
 	"num_inputs",
 	"num_outputs"
 ]
@@ -130,9 +133,14 @@ const SELECTION_INCOMING = 3
 
 
 var current_brain: Dictionary = {}
-var brain_dynamics := BrainDynamics.new()
+var brain_dynamics := BrainDynamicsNative.new()
+var runtime_state: Dictionary = {}
 var simulation_running := false
 var single_step_requested = false
+const VIEWER_VISUAL_INTERVAL_US := 100000
+var _visual_last_us: int = 0
+var _steps_since_visual: int = 0
+var _pending_topology_changed: bool = false
 var random_input_running = false
 var random_input_elapsed = 0.0
 var random_input_rng = RandomNumberGenerator.new()
@@ -579,6 +587,8 @@ func _load_genome_from_file(path: String) -> void:
 	var data = JSON.parse_string(file.get_as_text())
 
 	_migrate_legacy_retention_factor_key(data)
+	_migrate_legacy_initial_search_region(data)
+	_migrate_legacy_connections_density(data)
 
 	if not _is_valid_genome_file(data):
 		brain_info_label.text = "Invalid brain configuration file."
@@ -595,8 +605,11 @@ func _load_genome_from_file(path: String) -> void:
 	var num_inputs := int(external_parameters["num_inputs"])
 	var num_outputs := int(external_parameters["num_outputs"])
 	var genome := _genome_from_data(genome_data)
+	if genome == null:
+		brain_info_label.text = "Could not import genome into GenomeNative."
+		return
 
-	_start_brain_generation(genome, size, num_inputs, num_outputs)
+	_start_brain_generation(genome, size, num_inputs, num_outputs, float(external_parameters["connections_density"]))
 
 
 ## Converts the former saved JSON key "memory_factor" to the current "retention_factor" key.
@@ -616,6 +629,18 @@ func _migrate_legacy_retention_factor_key(data: Variant) -> void:
 
 
 ## Returns true when the parsed JSON follows the same configuration format accepted by BrainExplorer.
+func _migrate_legacy_initial_search_region(data: Variant) -> void:
+	if data is Dictionary and data.has("genome") and data["genome"] is Dictionary:
+		var genes: Dictionary = data["genome"]
+		if not genes.has("initial_search_region") and genes.has("connections"):
+			genes["initial_search_region"] = genes["connections"]
+
+func _migrate_legacy_connections_density(data: Variant) -> void:
+	if data is Dictionary and data.has("external_parameters") and data["external_parameters"] is Dictionary:
+		var external: Dictionary = data["external_parameters"]
+		if not external.has("connections_density"):
+			external["connections_density"] = "1"
+
 func _is_valid_genome_file(data: Variant) -> bool:
 	if not (data is Dictionary):
 		return false
@@ -638,7 +663,13 @@ func _is_valid_genome_file(data: Variant) -> bool:
 		if not (parameter_text is String):
 			return false
 
-		if parameter_text.is_empty() or _filter_characters(parameter_text, "0123456789") != parameter_text:
+		if parameter_name == "connections_density":
+			if not parameter_text.is_valid_float():
+				return false
+			var eta := float(parameter_text)
+			if is_nan(eta) or is_inf(eta) or eta <= 0.0:
+				return false
+		elif parameter_text.is_empty() or _filter_characters(parameter_text, "0123456789") != parameter_text:
 			return false
 
 	for gene_name in GENE_ORDER:
@@ -683,13 +714,11 @@ func _filter_characters(text: String, allowed_characters: String) -> String:
 
 
 ## Creates a Genome object from the gene strings stored in a BrainExplorer configuration file.
-func _genome_from_data(genome_data: Dictionary) -> Genome:
-	var genome := Genome.new()
-
+func _genome_from_data(genome_data: Dictionary) -> GenomeNative:
+	var gene_arrays: Dictionary = {}
 	for gene_name in GENE_ORDER:
-		genome.set(gene_name, _gene_from_text(genome_data[gene_name]))
-
-	return genome
+		gene_arrays[gene_name] = _gene_from_text(genome_data[gene_name])
+	return OffspringNative.new().genome_from_dictionary(gene_arrays)
 
 
 ## Converts a gene string into the integer array expected by Genome.
@@ -703,7 +732,7 @@ func _gene_from_text(text: String) -> Array[int]:
 
 
 ## Starts BrainBuilder outside the main thread so the viewer remains responsive.
-func _start_brain_generation(genome: Genome, size: Vector3i, num_inputs: int, num_outputs: int) -> void:
+func _start_brain_generation(genome: GenomeNative, size: Vector3i, num_inputs: int, num_outputs: int, connections_density: float) -> void:
 	_pause_simulation()
 	_stop_random_input()
 	brain_dynamics.clear()
@@ -725,7 +754,7 @@ func _start_brain_generation(genome: Genome, size: Vector3i, num_inputs: int, nu
 	brain_info_label.text = "Generating brain... 0%"
 
 	generation_thread = Thread.new()
-	var error := generation_thread.start(_build_brain_thread.bind(genome, size, num_inputs, num_outputs))
+	var error := generation_thread.start(_build_brain_thread.bind(genome, size, num_inputs, num_outputs, connections_density))
 
 	if error != OK:
 		generation_thread = null
@@ -734,9 +763,9 @@ func _start_brain_generation(genome: Genome, size: Vector3i, num_inputs: int, nu
 
 
 ## Worker thread entry point. It must not access the scene tree or UI nodes.
-func _build_brain_thread(genome: Genome, size: Vector3i, num_inputs: int, num_outputs: int) -> Dictionary:
-	var builder := BrainBuilder.new()
-	return builder.build(genome, size, num_inputs, num_outputs, _set_generation_progress_from_thread)
+func _build_brain_thread(genome: GenomeNative, size: Vector3i, num_inputs: int, num_outputs: int, connections_density: float) -> Dictionary:
+	var builder := BrainBuilderNative.new()
+	return builder.build(genome, size, num_inputs, num_outputs, _set_generation_progress_from_thread, connections_density)
 
 
 ## Receives BrainBuilder progress from the worker thread.
@@ -774,6 +803,10 @@ func _process(delta: float) -> void:
 
 			runtime_build_time_seconds = elapsed_seconds
 			brain_dynamics.set_brain(current_brain)
+			_visual_last_us = Time.get_ticks_usec()
+			_steps_since_visual = 0
+			_pending_topology_changed = false
+			_refresh_runtime_state()
 			_setup_input_controls()
 			_prepare_runtime_summary(current_brain)
 			_update_reciprocal_connection_statistics()
@@ -788,10 +821,26 @@ func _process(delta: float) -> void:
 		if simulation_running:
 			_update_random_input(delta)
 
+		var force_visual: bool = single_step_requested
 		var removed_connections := brain_dynamics.advance(delta)
-		var added_connections = brain_dynamics.added_connections_last_iteration
-		var topology_changed = removed_connections > 0 or added_connections > 0
+		_steps_since_visual += 1
+		_pending_topology_changed = _pending_topology_changed or removed_connections > 0 or brain_dynamics.runtime.added_connections_last_iteration > 0
+		# CPU visual readbacks are not free. Respect the same update controls as GPU,
+		# but always refresh when an iteration was requested manually.
+		var capture_visual: bool = force_visual or (
+			_steps_since_visual >= int($CanvasLayer/SpinBox.value)
+			and Time.get_ticks_usec() - _visual_last_us >= VIEWER_VISUAL_INTERVAL_US
+		)
 		single_step_requested = false
+		if not capture_visual:
+			return
+		_visual_last_us = Time.get_ticks_usec()
+		_steps_since_visual = 0
+		_refresh_runtime_state()
+		var topology_changed: bool = _pending_topology_changed
+		_pending_topology_changed = false
+		if topology_changed or show_connections.button_pressed or selected_neuron_index >= 0:
+			current_brain = brain_dynamics.get_brain_snapshot()
 
 		if topology_changed:
 			_update_reciprocal_connection_statistics()
@@ -819,6 +868,12 @@ func _process(delta: float) -> void:
 				_update_heatmap_colors()
 
 
+## Copies the native dynamic state to one GDScript cache for rendering and labels.
+## The native engine owns the actual simulation state and the connectivity.
+func _refresh_runtime_state() -> void:
+	runtime_state = brain_dynamics.get_viewer_state()
+
+
 ## Returns true while the worker thread is still owned by this scene.
 func _is_generating() -> bool:
 	return generation_thread != null and generation_thread.is_started()
@@ -829,6 +884,10 @@ func _clear_visualization() -> void:
 	_pause_simulation()
 	_clear_neuron_selection()
 	brain_dynamics.clear()
+	_visual_last_us = 0
+	_steps_since_visual = 0
+	_pending_topology_changed = false
+	runtime_state.clear()
 	current_brain = {}
 	runtime_build_time_seconds = 0.0
 	runtime_excitatory = 0
@@ -1049,7 +1108,7 @@ func _update_selection_legend() -> void:
 	var neurons: Array = current_brain["neurons"]
 	var selected_neuron: Dictionary = neurons[selected_neuron_index]
 	var outgoing_count = selected_neuron["connections"].size()
-	var incoming_count = brain_dynamics.incoming_connection_counts[selected_neuron_index]
+	var incoming_count = runtime_state["incoming_connection_counts"][selected_neuron_index]
 
 	selection_legend_label.text = (
 		"Selected neuron: RED = outgoing connections (%d)    BLUE = incoming connections (%d)"
@@ -1078,41 +1137,41 @@ func _update_selected_neuron_info() -> void:
 	elif neuron["output"]:
 		neuron_type = "Output"
 
-	var state = brain_dynamics.neuron_states_used[selected_neuron_index]
-	var normalized_signal = brain_dynamics.normalized_signals[selected_neuron_index]
-	var incoming_signal = brain_dynamics.incoming_signals[selected_neuron_index]
-	var firing = brain_dynamics.firing_states[selected_neuron_index]
-	var fatigue = brain_dynamics.fatigues_used[selected_neuron_index]
-	var activity_trace = brain_dynamics.activity_traces[selected_neuron_index]
+	var state = runtime_state["neuron_states_used"][selected_neuron_index]
+	var normalized_signal = runtime_state["normalized_signals"][selected_neuron_index]
+	var incoming_signal = runtime_state["incoming_signals"][selected_neuron_index]
+	var firing = runtime_state["firing_states"][selected_neuron_index]
+	var fatigue = runtime_state["fatigues_used"][selected_neuron_index]
+	var activity_trace = runtime_state["activity_traces"][selected_neuron_index]
 	var activation_threshold = float(neuron["activation_threshold"])
-	var effective_threshold = brain_dynamics.effective_thresholds_used[selected_neuron_index]
+	var effective_threshold = runtime_state["effective_thresholds_used"][selected_neuron_index]
 	var decay_factor = float(neuron["decay_factor"])
-	var decay_rate = brain_dynamics.decay_rates[selected_neuron_index]
+	var decay_rate = runtime_state["decay_rates"][selected_neuron_index]
 	var retention_factor = float(neuron["retention_factor"])
 	var hebbian_rate = float(neuron["hebbian_plasticity_rate"])
 	var polarity = int(neuron["polarity_factor"])
 	var connection_energy = float(neuron["connections_value"])
 	var modulatory_release_factor = float(neuron["modulatory_release_factor"])
 	var modulatory_sensitivity = float(neuron["modulatory_sensitivity"])
-	var modulatory_release = brain_dynamics.modulatory_releases[selected_neuron_index]
-	var modulatory_field = brain_dynamics.modulatory_fields[selected_neuron_index]
-	var effective_modulation = brain_dynamics.effective_modulations[selected_neuron_index]
+	var modulatory_release = runtime_state["modulatory_releases"][selected_neuron_index]
+	var modulatory_field = runtime_state["modulatory_fields"][selected_neuron_index]
+	var effective_modulation = runtime_state["effective_modulations"][selected_neuron_index]
 	#var outgoing_count = neuron["connections"].size()
-	#var incoming_count = brain_dynamics.incoming_connection_counts[selected_neuron_index]
+	#var incoming_count = runtime_state["incoming_connection_counts"][selected_neuron_index]
 
 	var role_specific = ""
 
 	if neuron["input"]:
-		var input_slot = brain_dynamics.input_neuron_indices.find(selected_neuron_index)
-		var input_used = 0.0 if input_slot < 0 else brain_dynamics.input_signals_used[input_slot]
+		var input_slot = runtime_state["input_neuron_indices"].find(selected_neuron_index)
+		var input_used = 0.0 if input_slot < 0 else runtime_state["input_signals_used"][input_slot]
 		role_specific = "\nInput used: %.3f    Input influence psi: %.3f    Minimum connection weight: %.3f" % [
 			input_used,
-			brain_dynamics.input_gain,
-			brain_dynamics.input_min_weight
+			runtime_state["input_gain"],
+			runtime_state["input_min_weight"]
 		]
 	elif neuron["output"]:
-		var output_slot = brain_dynamics.output_slot_by_neuron_index[selected_neuron_index]
-		var output_signal = 0.0 if output_slot < 0 else brain_dynamics.output_signals[output_slot]
+		var output_slot = runtime_state["output_slot_by_neuron_index"][selected_neuron_index]
+		var output_signal = 0.0 if output_slot < 0 else runtime_state["output_signals"][output_slot]
 		role_specific = "\nOutput signal: %.3f" % output_signal
 
 	selected_neuron_info_label.text = (
@@ -1193,6 +1252,8 @@ func _select_neuron_at_screen_position(mouse_position: Vector2) -> void:
 	if best_index < 0:
 		return
 
+	# The mesh may have been hidden while the native dynamics kept evolving.
+	current_brain = brain_dynamics.get_brain_snapshot()
 	if best_index != selected_neuron_index:
 		selected_neuron_index = best_index
 		selected_neuron_state = SELECTION_BOTH
@@ -1391,13 +1452,13 @@ func _heatmap_value(neuron: Dictionary, parameter_key: String, neuron_index: int
 		"activation_threshold":
 			return neuron["activation_threshold"]
 		"signal", "signal_0_5", "signal_0_1":
-			return brain_dynamics.normalized_signals[neuron_index]
+			return runtime_state["normalized_signals"][neuron_index]
 		"firing":
-			return brain_dynamics.firing_states[neuron_index]
+			return runtime_state["firing_states"][neuron_index]
 		"activity_trace":
-			return brain_dynamics.activity_traces[neuron_index]
+			return runtime_state["activity_traces"][neuron_index]
 		"fatigue":
-			return brain_dynamics.fatigues[neuron_index]
+			return runtime_state["fatigues"][neuron_index]
 		"decay_factor":
 			return neuron["decay_factor"]
 		"retention_factor":
@@ -1409,11 +1470,11 @@ func _heatmap_value(neuron: Dictionary, parameter_key: String, neuron_index: int
 		"modulatory_sensitivity":
 			return neuron["modulatory_sensitivity"]
 		"modulatory_release":
-			return brain_dynamics.modulatory_releases[neuron_index]
+			return runtime_state["modulatory_releases"][neuron_index]
 		"modulatory_field":
-			return brain_dynamics.modulatory_fields[neuron_index]
+			return runtime_state["modulatory_fields"][neuron_index]
 		"effective_modulation":
-			return brain_dynamics.effective_modulations[neuron_index]
+			return runtime_state["effective_modulations"][neuron_index]
 		"polarity_factor":
 			return neuron["polarity_factor"]
 		"connection_energy":
@@ -1459,6 +1520,7 @@ func _on_show_neurons_toggled(pressed: bool) -> void:
 ## Shows or hides the connection mesh.
 func _on_show_connections_toggled(pressed: bool) -> void:
 	if pressed and not current_brain.is_empty():
+		current_brain = brain_dynamics.get_brain_snapshot()
 		_build_connections(current_brain)
 
 	connections_instance.visible = pressed and selected_neuron_index < 0
@@ -1531,21 +1593,33 @@ func _prepare_runtime_summary(brain: Dictionary) -> void:
 ## Each direction is counted separately, so one reciprocal pair contributes two reciprocal directional connections.
 func _update_reciprocal_connection_statistics() -> void:
 	var neurons: Array = current_brain["neurons"]
-	var neuron_count = neurons.size()
+	var neuron_count: int = neurons.size()
+	var size: Vector3i = current_brain["size"]
+	var I: int = size.x
+	var IJ: int = size.x * size.y
 	var connection_keys: Dictionary = {}
-	var total_connections = 0
+	var total_connections := 0
 
-	for source_index in neuron_count:
-		for connection in neurons[source_index]["connections"]:
-			var target_index = int(connection["target_index"])
+	# Both the builder and the native dynamics expose connection["target"]
+	# as a Vector3i. The optional target_index exists only in snapshots.
+	# Spatial indices also remain valid when the neuron array is reordered.
+	for neuron in neurons:
+		var source_position: Vector3i = neuron["position"]
+		var source_index: int = source_position.x + I * source_position.y + IJ * source_position.z
+		for connection in neuron["connections"]:
+			var target_position: Vector3i = connection["target"]
+			var target_index: int = target_position.x + I * target_position.y + IJ * target_position.z
 			connection_keys[source_index * neuron_count + target_index] = true
 			total_connections += 1
 
-	var reciprocal_connections = 0
+	var reciprocal_connections := 0
 
-	for source_index in neuron_count:
-		for connection in neurons[source_index]["connections"]:
-			var target_index = int(connection["target_index"])
+	for neuron in neurons:
+		var source_position: Vector3i = neuron["position"]
+		var source_index: int = source_position.x + I * source_position.y + IJ * source_position.z
+		for connection in neuron["connections"]:
+			var target_position: Vector3i = connection["target"]
+			var target_index: int = target_position.x + I * target_position.y + IJ * target_position.z
 
 			if connection_keys.has(target_index * neuron_count + source_index):
 				reciprocal_connections += 1
@@ -1556,7 +1630,6 @@ func _update_reciprocal_connection_statistics() -> void:
 		if total_connections == 0
 		else 100.0 * reciprocal_connections / total_connections
 	)
-
 
 ## Updates the shared label with the BrainExplorer summary plus live runtime information.
 func _update_runtime_status() -> void:
@@ -1569,27 +1642,27 @@ func _update_runtime_status() -> void:
 		+ "Neurons: %d\n" % total_neurons
 		+ "Maximum connections per neuron: %d\n" % current_brain["max_connections"]
 		+ "Input influence psi: %.3f\n" % current_brain["input_gain"]
-		+ "Existing directional connections: %d\n" % brain_dynamics.total_connections
+		+ "Existing directional connections: %d\n" % runtime_state["total_connections"]
 		+ "Reciprocal directional connections: %d (%.2f%%)\n" % [runtime_reciprocal_directional_connections, runtime_reciprocal_connection_rate]
-		+ "New connections formed by structural plasticity: %d\n" % brain_dynamics.total_structural_plasticity_connections_formed
-		+ "New connections formed by reconnection: %d\n" % brain_dynamics.total_homeostatic_connections_formed
-		+ "Connections destroyed: %d\n" % brain_dynamics.total_connections_destroyed
-		+ "Mean outgoing connections: %d\n" % brain_dynamics.mean_outgoing_connections
-		+ "Outgoing degree range: %d - %d\n" % [brain_dynamics.min_out_degree, brain_dynamics.max_out_degree]
+		+ "New connections formed by structural plasticity: %d\n" % runtime_state["total_structural_plasticity_connections_formed"]
+		+ "New connections formed by reconnection: %d\n" % runtime_state["total_homeostatic_connections_formed"]
+		+ "Connections destroyed: %d\n" % runtime_state["total_connections_destroyed"]
+		+ "Mean outgoing connections: %d\n" % runtime_state["mean_outgoing_connections"]
+		+ "Outgoing degree range: %d - %d\n" % [runtime_state["min_out_degree"], runtime_state["max_out_degree"]]
 		+ "Excitatory neurons: %d (%.1f%%)\n" % [runtime_excitatory, 100.0 * runtime_excitatory / neuron_denominator]
 		+ "Inhibitory neurons: %d (%.1f%%)\n\n" % [runtime_inhibitory, 100.0 * runtime_inhibitory / neuron_denominator]
-		+ "Mean signal: %.3f\n" % brain_dynamics.mean_signal
+		+ "Mean signal: %.3f\n" % runtime_state["mean_signal"]
 		+ "Mean activation threshold: %.3f\n" % runtime_mean_activation_threshold
 		+ "Mean decay factor: %.3f\n" % runtime_mean_decay_factor
 		+ "Mean retention factor: %.3f\n" % runtime_mean_retention_factor
 		+ "Mean Hebbian plasticity rate: %.3f\n" % runtime_mean_hebbian_plasticity_rate
 		+ "Mean modulatory release factor: %.3f\n" % runtime_mean_modulatory_release_factor
 		+ "Mean modulatory sensitivity: %.3f\n" % runtime_mean_modulatory_sensitivity
-		+ "Mean modulatory release: %.3f\n" % brain_dynamics.mean_modulatory_release
-		+ "Mean modulatory field: %.3f\n" % brain_dynamics.mean_modulatory_field
-		+ "Mean effective modulation: %.3f\n" % brain_dynamics.mean_effective_modulation
-		+ "Mean eligibility trace: %.3f\n" % brain_dynamics.mean_eligibility_trace
-		+ "Mean connection weight: %.3f\n\n" % brain_dynamics.mean_weight
+		+ "Mean modulatory release: %.3f\n" % runtime_state["mean_modulatory_release"]
+		+ "Mean modulatory field: %.3f\n" % runtime_state["mean_modulatory_field"]
+		+ "Mean effective modulation: %.3f\n" % runtime_state["mean_effective_modulation"]
+		+ "Mean eligibility trace: %.3f\n" % runtime_state["mean_eligibility_trace"]
+		+ "Mean connection weight: %.3f\n\n" % runtime_state["mean_weight"]
 		+ "Maximum fatigue: %.3f\n" % current_brain["refractory_strength"]
 		+ "Exponential factor: %.3f\n" % current_brain["exponential_factor"]
 		+ "Modulatory persistence lambda: %.3f\n" % current_brain["lambda"]
@@ -1597,8 +1670,8 @@ func _update_runtime_status() -> void:
 		+ "Trace persistence mu: %.3f\n" % current_brain["mu"]
 		+ "Structural plasticity: %.3f\n" % current_brain["structural_plasticity"]
 		+ "Build time: %.3f s\n" % runtime_build_time_seconds
-		+ "Iteration: %d / " % brain_dynamics.iteration_count
-		+ "Elapsed time: %.3f s" % (brain_dynamics.elapsed_time_seconds)
+		+ "Iteration: %d / " % runtime_state["iteration_count"]
+		+ "Elapsed time: %.3f s" % (runtime_state["elapsed_time_seconds"])
 	)
 
 	if selected_neuron_index >= 0:
@@ -1640,7 +1713,7 @@ func _pause_simulation() -> void:
 func _setup_input_controls() -> void:
 	fire_input_option_button.clear()
 
-	var input_count = brain_dynamics.input_neuron_indices.size()
+	var input_count = runtime_state["input_neuron_indices"].size()
 	var has_inputs = input_count > 0
 
 	if has_inputs:
@@ -1674,7 +1747,7 @@ func _on_fire_input_pressed() -> void:
 	if selected_index < 0:
 		return
 
-	var input_count = brain_dynamics.input_neuron_indices.size()
+	var input_count = runtime_state["input_neuron_indices"].size()
 	var input_strength = fire_input_strength.value
 
 	if selected_index == 0:
@@ -1692,7 +1765,7 @@ func _on_fire_random_pressed() -> void:
 		_stop_random_input()
 		return
 
-	if brain_dynamics.input_neuron_indices.is_empty():
+	if runtime_state["input_neuron_indices"].is_empty():
 		return
 
 	random_input_running = true
@@ -1723,7 +1796,7 @@ func _update_random_input(delta_seconds: float) -> void:
 
 ## Queues the current FireInputStrength on one randomly selected available input.
 func _fire_one_random_input() -> void:
-	var input_count = brain_dynamics.input_neuron_indices.size()
+	var input_count = runtime_state["input_neuron_indices"].size()
 
 	if input_count == 0:
 		return
@@ -1749,7 +1822,7 @@ func add_input_signal(input_index: int, input_signal: float) -> void:
 
 ## Returns the normalized signals emitted by output neurons in the latest iteration.
 func get_output_signals() -> PackedFloat64Array:
-	return brain_dynamics.output_signals
+	return runtime_state["output_signals"]
 
 
 ## Restores the generated brain and camera to their initial state without running BrainBuilder again.
@@ -1763,6 +1836,8 @@ func _reset_brain() -> void:
 	_stop_random_input()
 	_clear_neuron_selection()
 	brain_dynamics.reset()
+	_refresh_runtime_state()
+	current_brain = brain_dynamics.get_brain_snapshot()
 	_update_reciprocal_connection_statistics()
 	_build_heatmap_metadata(current_brain)
 

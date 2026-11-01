@@ -5,6 +5,7 @@ extends Node
 var max_connections: Array[int]
 var beta: Array[int]
 var connections: Array[int]
+var initial_search_region: Array[int]
 var activation_threshold: Array[int]
 var refractory_strength: Array[int]
 var exponential_factor: Array[int]
@@ -24,6 +25,7 @@ func _init() -> void:
 	max_connections = _random_gene(8)
 	beta = _random_gene(8)
 	connections = _random_gene(64)
+	initial_search_region = _random_gene(64)
 	activation_threshold = _random_gene(64)
 	refractory_strength = _random_gene(8)
 	exponential_factor = _random_gene(8)

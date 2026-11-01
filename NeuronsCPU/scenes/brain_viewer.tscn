@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://ch12xd8770bas"]
 
-[ext_resource type="Script" uid="uid://3aseionodjj0" path="res://scripts/brain_viewer.gd" id="1_h3bh5"]
+[ext_resource type="Script" path="res://scripts/brain_viewer.gd" id="1_h3bh5"]
 
 [node name="BrainViewer" type="Node3D" unique_id=716599046]
 script = ExtResource("1_h3bh5")
@@ -90,9 +90,9 @@ offset_bottom = 467.0
 modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
 layout_mode = 0
 offset_left = 1454.0
-offset_top = 739.0
+offset_top = 778.0
 offset_right = 1594.0
-offset_bottom = 781.0
+offset_bottom = 820.0
 theme_override_font_sizes/font_size = 24
 text = "Reset Brain"
 
@@ -100,9 +100,9 @@ text = "Reset Brain"
 modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
 layout_mode = 0
 offset_left = 1454.0
-offset_top = 794.0
+offset_top = 833.0
 offset_right = 1587.0
-offset_bottom = 836.0
+offset_bottom = 875.0
 theme_override_font_sizes/font_size = 24
 text = "Load Brain"
 
@@ -192,3 +192,19 @@ offset_left = 141.0
 offset_top = -2.0
 offset_right = 181.0
 offset_bottom = 21.0
+
+[node name="SpinBox" type="SpinBox" parent="CanvasLayer" unique_id=92009719]
+offset_left = 1616.0
+offset_top = 738.0
+offset_right = 1702.5
+offset_bottom = 769.0
+min_value = 1.0
+value = 4.0
+
+[node name="Label" type="Label" parent="CanvasLayer/SpinBox" unique_id=2120966077]
+layout_mode = 0
+offset_left = -164.0
+offset_top = -27.0
+offset_right = 84.0
+offset_bottom = -4.0
+text = "Visual update every N iterations"

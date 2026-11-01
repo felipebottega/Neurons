@@ -36,6 +36,7 @@ private:
 	std::vector<int32_t> max_connections;
 	std::vector<int32_t> beta;
 	std::vector<int32_t> connections;
+	std::vector<int32_t> initial_search_region;
 	std::vector<int32_t> activation_threshold;
 	std::vector<int32_t> refractory_strength;
 	std::vector<int32_t> exponential_factor;

@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://diucytbev6x4b"
+path="res://.godot/imported/brain_population_modulation.glsl-f2d72c0a25e3016e5e07d5eb9bcf1488.res"
+
+[deps]
+
+source_file="res://shaders/brain_population_modulation.glsl"
+dest_files=["res://.godot/imported/brain_population_modulation.glsl-f2d72c0a25e3016e5e07d5eb9bcf1488.res"]
+
+[params]
+

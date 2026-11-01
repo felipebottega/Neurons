@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://x66vhuaxhiul"
+path="res://.godot/imported/brain_population_reset.glsl-9a41f8afe0fd7696691859f34345fb20.res"
+
+[deps]
+
+source_file="res://shaders/brain_population_reset.glsl"
+dest_files=["res://.godot/imported/brain_population_reset.glsl-9a41f8afe0fd7696691859f34345fb20.res"]
+
+[params]
+

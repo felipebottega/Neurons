@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://b87nkqfaloe61"
+path="res://.godot/imported/brain_apply_roles.glsl-595bf54d8b93fdde529d5e2e0e902469.res"
+
+[deps]
+
+source_file="res://shaders/brain_apply_roles.glsl"
+dest_files=["res://.godot/imported/brain_apply_roles.glsl-595bf54d8b93fdde529d5e2e0e902469.res"]
+
+[params]
+

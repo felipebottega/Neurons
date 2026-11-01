@@ -30,13 +30,15 @@ public:
 			const Vector3i &size,
 			int64_t num_inputs,
 			int64_t num_outputs,
-			const Callable &progress_callback = Callable());
+			const Callable &progress_callback = Callable(),
+			double connections_density = 1.0);
 
 private:
 	struct NativeConnection {
 		int32_t target_spatial_index = 0;
 		float weight = 0.0f;
 		float eligibility_trace = 0.0f;
+		uint8_t construction_pass = 0; // 0=local, 1=complementary, 2=rescue
 	};
 
 	struct NativeNeuron {
@@ -70,8 +72,13 @@ private:
 
 	struct NativeBrain {
 		Vector3i size;
-		float beta = 0.0f;
+		double beta = 0.0;
 		int32_t max_connections = 0;
+		double connections_density = 1.0;
+		float initial_search_extent = 0.0f;
+		int32_t initial_search_radius_i = 0;
+		int32_t initial_search_radius_j = 0;
+		int32_t initial_search_radius_k = 0;
 		float refractory_strength = 0.0f;
 		float exponential_factor = 0.0f;
 		float structural_plasticity = 0.0f;
@@ -80,15 +87,19 @@ private:
 		float mu = 0.0f;
 		float input_gain = 0.0f;
 		bool valid = false;
+		int64_t first_pass_connections = 0;
+		int64_t second_pass_connections = 0;
 		IsolationCounts isolated_before_rescue;
 		IsolationCounts isolated_after_rescue;
 		RescueFailureCauses rescue_failure_causes;
+		int64_t rescue_candidates_receiver = 0;
+		int64_t rescue_candidates_input = 0;
 		std::vector<NativeNeuron> neurons;
 	};
 
 	void _create_neurons(NativeBrain &brain, const GenomeNative &genome, const Callable &progress_callback) const;
 	void _set_input_output_neurons(NativeBrain &brain, int32_t num_inputs, int32_t num_outputs, const Callable &progress_callback) const;
-	void _create_connections(NativeBrain &brain, const std::vector<int32_t> &gene, const Callable &progress_callback) const;
+	void _create_connections(NativeBrain &brain, const std::vector<int32_t> &gene, const std::vector<int32_t> &search_gene, const Callable &progress_callback) const;
 	bool _clear_invalid_connections(NativeBrain &brain, const std::vector<int32_t> &gene, const std::vector<int32_t> &input_influence_gene, const Callable &progress_callback) const;
 	bool _rescue_isolated_neurons(NativeBrain &brain, const std::vector<int32_t> &gene, const std::vector<int32_t> &neuron_by_spatial_index, std::vector<int32_t> &incoming_connections, const Callable &progress_callback) const;
 	Vector3 _modulatory_dynamics(const std::vector<int32_t> &gene) const;

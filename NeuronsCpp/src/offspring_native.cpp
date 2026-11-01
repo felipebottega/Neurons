@@ -44,6 +44,7 @@ Ref<GenomeNative> OffspringNative::generate(
 	_crossover_gene(parent_a->max_connections, parent_b->max_connections, child->max_connections);
 	_crossover_gene(parent_a->beta, parent_b->beta, child->beta);
 	_crossover_gene(parent_a->connections, parent_b->connections, child->connections);
+	_crossover_gene(parent_a->initial_search_region, parent_b->initial_search_region, child->initial_search_region);
 	_crossover_gene(parent_a->activation_threshold, parent_b->activation_threshold, child->activation_threshold);
 	_crossover_gene(parent_a->refractory_strength, parent_b->refractory_strength, child->refractory_strength);
 	_crossover_gene(parent_a->exponential_factor, parent_b->exponential_factor, child->exponential_factor);
@@ -60,6 +61,7 @@ Ref<GenomeNative> OffspringNative::generate(
 	_mutate_gene(child->max_connections, mutation_probability_f32);
 	_mutate_gene(child->beta, mutation_probability_f32);
 	_mutate_gene(child->connections, mutation_probability_f32);
+	_mutate_gene(child->initial_search_region, mutation_probability_f32);
 	_mutate_gene(child->activation_threshold, mutation_probability_f32);
 	_mutate_gene(child->refractory_strength, mutation_probability_f32);
 	_mutate_gene(child->exponential_factor, mutation_probability_f32);
@@ -84,6 +86,7 @@ Ref<GenomeNative> OffspringNative::genome_from_dictionary(const Dictionary &data
 			!_read_gene(data, "max_connections", 8, genome->max_connections) ||
 			!_read_gene(data, "beta", 8, genome->beta) ||
 			!_read_gene(data, "connections", 64, genome->connections) ||
+			!_read_gene(data, "initial_search_region", 64, genome->initial_search_region) ||
 			!_read_gene(data, "activation_threshold", 64, genome->activation_threshold) ||
 			!_read_gene(data, "refractory_strength", 8, genome->refractory_strength) ||
 			!_read_gene(data, "exponential_factor", 8, genome->exponential_factor) ||

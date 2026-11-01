@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://7d4a18i2ymww"
+path="res://.godot/imported/brain_population_state.glsl-5138f960832931d8c3870b3a8b5d17e7.res"
+
+[deps]
+
+source_file="res://shaders/brain_population_state.glsl"
+dest_files=["res://.godot/imported/brain_population_state.glsl-5138f960832931d8c3870b3a8b5d17e7.res"]
+
+[params]
+

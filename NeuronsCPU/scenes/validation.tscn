@@ -1,0 +1,15 @@
+[gd_scene format=3 uid="uid://cw2mw6gk88sc6"]
+
+[ext_resource type="Script" path="res://scripts/validation.gd" id="1_val"]
+
+[node name="ValidationGPU" type="Node" unique_id=35980208]
+script = ExtResource("1_val")
+
+[node name="Status" type="Label" parent="." unique_id=495298732]
+offset_left = 30.0
+offset_top = 40.0
+offset_right = 1150.0
+offset_bottom = 220.0
+theme_override_font_sizes/font_size = 22
+text = "Preparing validation..."
+autowrap_mode = 2

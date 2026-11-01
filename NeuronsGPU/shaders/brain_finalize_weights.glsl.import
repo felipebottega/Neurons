@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://gb465hor1e0"
+path="res://.godot/imported/brain_finalize_weights.glsl-bcc8abf10f503466f846ec3ddd04ab7b.res"
+
+[deps]
+
+source_file="res://shaders/brain_finalize_weights.glsl"
+dest_files=["res://.godot/imported/brain_finalize_weights.glsl-bcc8abf10f503466f846ec3ddd04ab7b.res"]
+
+[params]
+

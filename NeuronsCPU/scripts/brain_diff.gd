@@ -5,6 +5,7 @@ const GENE_SPECS = {
 	"max_connections": 8,
 	"beta": 8,
 	"connections": 64,
+	"initial_search_region": 64,
 	"activation_threshold": 64,
 	"refractory_strength": 8,
 	"exponential_factor": 8,
@@ -22,6 +23,7 @@ const GENE_SPECS = {
 const GENE_ORDER = [
 	"max_connections",
 	"connections",
+	"initial_search_region",
 	"activation_threshold",
 	"refractory_strength",
 	"exponential_factor",
@@ -40,6 +42,7 @@ const GENE_ORDER = [
 const GENE_LABELS = {
 	"max_connections": "Maximum connections",
 	"connections": "Connections",
+	"initial_search_region": "Initial search region",
 	"activation_threshold": "Activation threshold",
 	"refractory_strength": "Refractory strength",
 	"exponential_factor": "Exponential factor",
@@ -59,6 +62,7 @@ const EXTERNAL_PARAMETER_NAMES = [
 	"size_x",
 	"size_y",
 	"size_z",
+	"connections_density",
 	"num_inputs",
 	"num_outputs"
 ]
@@ -67,6 +71,7 @@ const EXTERNAL_PARAMETER_LABELS = {
 	"size_x": "Size X",
 	"size_y": "Size Y",
 	"size_z": "Size Z",
+	"connections_density": "Connections density",
 	"num_inputs": "Inputs",
 	"num_outputs": "Outputs"
 }
@@ -270,6 +275,8 @@ func _load_brain_configuration(path: String) -> void:
 	var data = JSON.parse_string(file.get_as_text())
 
 	_migrate_legacy_retention_factor_key(data)
+	_migrate_legacy_initial_search_region(data)
+	_migrate_legacy_connections_density(data)
 
 	if not _is_valid_genome_file(data):
 		summary_error_label.text = "Invalid brain configuration file:\n%s" % path
@@ -329,6 +336,19 @@ func _migrate_legacy_retention_factor_key(data: Variant) -> void:
 
 
 ## Returns true when the parsed JSON contains every field required by BrainBuilder.
+func _migrate_legacy_initial_search_region(data: Variant) -> void:
+	if not (data is Dictionary) or not data.has("genome") or not (data["genome"] is Dictionary):
+		return
+	var genes: Dictionary = data["genome"]
+	if not genes.has("initial_search_region") and genes.has("connections"):
+		genes["initial_search_region"] = genes["connections"]
+
+func _migrate_legacy_connections_density(data: Variant) -> void:
+	if data is Dictionary and data.has("external_parameters") and data["external_parameters"] is Dictionary:
+		var external: Dictionary = data["external_parameters"]
+		if not external.has("connections_density"):
+			external["connections_density"] = "1"
+
 func _is_valid_genome_file(data: Variant) -> bool:
 	if not (data is Dictionary):
 		return false
@@ -351,7 +371,13 @@ func _is_valid_genome_file(data: Variant) -> bool:
 		if not (parameter_text is String):
 			return false
 
-		if parameter_text.is_empty() or _filter_characters(parameter_text, "0123456789") != parameter_text:
+		if parameter_name == "connections_density":
+			if not parameter_text.is_valid_float():
+				return false
+			var eta := float(parameter_text)
+			if is_nan(eta) or is_inf(eta) or eta <= 0.0:
+				return false
+		elif parameter_text.is_empty() or _filter_characters(parameter_text, "0123456789") != parameter_text:
 			return false
 
 	for gene_name in GENE_ORDER:
@@ -471,31 +497,21 @@ func _update_compute_button() -> void:
 	load_brain_2_button.disabled = _is_generating()
 
 
-## Builds a Genome object from one saved configuration.
-func _genome_from_config(config: Dictionary) -> Genome:
-	var genome = Genome.new()
+## Builds the native genome from a saved configuration without modifying its genes.
+## GenomeNative has no public setters; OffspringNative validates and imports
+## the same arrays that were previously assigned to the GDScript Genome.
+func _genome_from_config(config: Dictionary) -> GenomeNative:
 	var data: Dictionary = config["genome"]
+	var gene_arrays: Dictionary = {}
 
-	genome.max_connections = _gene_from_text(data["max_connections"])
-	genome.connections = _gene_from_text(data["connections"])
-	genome.activation_threshold = _gene_from_text(data["activation_threshold"])
-	genome.refractory_strength = _gene_from_text(data["refractory_strength"])
-	genome.exponential_factor = _gene_from_text(data["exponential_factor"])
-	genome.decay_factor = _gene_from_text(data["decay_factor"])
-	genome.retention_factor = _gene_from_text(data["retention_factor"])
-	genome.polarity_factor = _gene_from_text(data["polarity_factor"])
-	genome.hebbian_plasticity_rate = _gene_from_text(data["hebbian_plasticity_rate"])
-	genome.modulatory_release_factor = _gene_from_text(data["modulatory_release_factor"])
-	genome.modulatory_sensitivity = _gene_from_text(data["modulatory_sensitivity"])
-	genome.modulatory_dynamics = _gene_from_text(data["modulatory_dynamics"])
-	genome.structural_plasticity = _gene_from_text(data["structural_plasticity"])
-	genome.input_influence = _gene_from_text(data["input_influence"])
-	genome.beta = _gene_from_text(data["beta"])
+	for gene_name in GENE_ORDER:
+		gene_arrays[gene_name] = _gene_from_text(data[gene_name])
 
-	return genome
+	var offspring: OffspringNative = OffspringNative.new()
+	return offspring.genome_from_dictionary(gene_arrays)
 
 
-## Converts a gene string into the integer array expected by Genome.
+## Converts a gene string into the integer array expected by the native genome factory.
 func _gene_from_text(text: String) -> Array[int]:
 	var gene: Array[int] = []
 
@@ -551,16 +567,22 @@ func _build_brains_thread() -> Dictionary:
 	)
 	var num_inputs := int(external["num_inputs"])
 	var num_outputs := int(external["num_outputs"])
-	var builder_1 = BrainBuilder.new()
-	var builder_2 = BrainBuilder.new()
+	var genome_1: GenomeNative = _genome_from_config(generation_config_1)
+	var genome_2: GenomeNative = _genome_from_config(generation_config_2)
+	if genome_1 == null or genome_2 == null:
+		return {"brain_1": {}, "brain_2": {}, "time_1": 0.0, "time_2": 0.0}
+
+	var builder_1: BrainBuilderNative = BrainBuilderNative.new()
+	var builder_2: BrainBuilderNative = BrainBuilderNative.new()
 
 	var start_1 := Time.get_ticks_msec()
 	var result_1: Dictionary = builder_1.build(
-		_genome_from_config(generation_config_1),
+		genome_1,
 		size,
 		num_inputs,
 		num_outputs,
-		_set_generation_progress_from_thread.bind(1)
+		_set_generation_progress_from_thread.bind(1),
+		float(external["connections_density"])
 	)
 	var time_1 := (Time.get_ticks_msec() - start_1) / 1000.0
 
@@ -569,11 +591,12 @@ func _build_brains_thread() -> Dictionary:
 
 	var start_2 := Time.get_ticks_msec()
 	var result_2: Dictionary = builder_2.build(
-		_genome_from_config(generation_config_2),
+		genome_2,
 		size,
 		num_inputs,
 		num_outputs,
-		_set_generation_progress_from_thread.bind(2)
+		_set_generation_progress_from_thread.bind(2),
+		float(external["connections_density"])
 	)
 	var time_2 := (Time.get_ticks_msec() - start_2) / 1000.0
 
@@ -644,6 +667,7 @@ func _update_summary(first_brain: Dictionary, second_brain: Dictionary, time_1: 
 		"Dimensions: %d x %d x %d\n" % [int(external["size_x"]), int(external["size_y"]), int(external["size_z"])]
 		+ "Inputs: %d    Outputs: %d\n" % [int(external["num_inputs"]), int(external["num_outputs"])]
 		+ "Beta: %.6f vs %.6f\n" % [first_brain["beta"], second_brain["beta"]]
+		+ "Connections density eta: %.6f\n" % float(external["connections_density"])
 		+ "Maximum connections per neuron: %d vs %d\n" % [first_brain["max_connections"], second_brain["max_connections"]]
 		+ "Existing directional connections: %d vs %d\n" % [stats_1["total_connections"], stats_2["total_connections"]]
 		+ "Shared directional connections: %d / %d (%.2f%%)\n" % [

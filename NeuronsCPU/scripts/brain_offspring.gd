@@ -5,6 +5,7 @@ const GENE_SPECS = {
 	"max_connections": 8,
 	"beta": 8,
 	"connections": 64,
+	"initial_search_region": 64,
 	"activation_threshold": 64,
 	"refractory_strength": 8,
 	"exponential_factor": 8,
@@ -22,6 +23,7 @@ const GENE_SPECS = {
 const GENE_ORDER = [
 	"max_connections",
 	"connections",
+	"initial_search_region",
 	"activation_threshold",
 	"refractory_strength",
 	"exponential_factor",
@@ -40,6 +42,7 @@ const GENE_ORDER = [
 const GENE_LABELS = {
 	"max_connections": "Maximum connections",
 	"connections": "Connections",
+	"initial_search_region": "Initial search region",
 	"activation_threshold": "Activation threshold",
 	"refractory_strength": "Refractory strength",
 	"exponential_factor": "Exponential factor",
@@ -59,6 +62,7 @@ const EXTERNAL_PARAMETER_NAMES = [
 	"size_x",
 	"size_y",
 	"size_z",
+	"connections_density",
 	"num_inputs",
 	"num_outputs"
 ]
@@ -67,6 +71,7 @@ const EXTERNAL_PARAMETER_LABELS = {
 	"size_x": "Size X",
 	"size_y": "Size Y",
 	"size_z": "Size Z",
+	"connections_density": "Connections density",
 	"num_inputs": "Inputs",
 	"num_outputs": "Outputs"
 }
@@ -134,7 +139,7 @@ const HEATMAP_PARAMETER_LABELS = [
 var config_1: Dictionary = {}
 var config_2: Dictionary = {}
 var current_brain: Dictionary = {}
-var current_offspring_genome: Genome
+var current_offspring_genome: GenomeNative
 
 var load_brain_1_default_modulate := Color.WHITE
 var load_brain_2_default_modulate := Color.WHITE
@@ -248,7 +253,7 @@ func _setup_save_genome_dialog() -> void:
 ## Configures the mutation probability field.
 func _setup_mutation_probability_field() -> void:
 	if mutation_probability_field.text.strip_edges().is_empty():
-		mutation_probability_field.text = str(Offspring.DEFAULT_MUTATION_PROBABILITY)
+		mutation_probability_field.text = "0.001"
 
 	mutation_probability_field.tooltip_text = "Mutation probability per digit. Must be between 0 and 1."
 
@@ -282,11 +287,11 @@ func _save_genome_to_file(path: String) -> void:
 	var genome_data := {}
 
 	for gene_name in GENE_ORDER:
-		var gene: Array[int] = current_offspring_genome.get(gene_name)
+		var gene: Array = current_offspring_genome.get_gene(gene_name)
 		genome_data[gene_name] = _gene_to_text(gene)
 
 	var data := {
-		"format_version": 2,
+		"format_version": 3,
 		"external_parameters": external_parameters,
 		"genome": genome_data
 	}
@@ -313,6 +318,8 @@ func _load_brain_configuration(path: String) -> void:
 	var data = JSON.parse_string(file.get_as_text())
 
 	_migrate_legacy_retention_factor_key(data)
+	_migrate_legacy_initial_search_region(data)
+	_migrate_legacy_connections_density(data)
 
 	if not _is_valid_genome_file(data):
 		summary_label.text = "Invalid brain configuration file:\n%s" % path
@@ -329,9 +336,8 @@ func _load_brain_configuration(path: String) -> void:
 
 	current_brain.clear()
 
-	if current_offspring_genome != null:
-		current_offspring_genome.free()
-		current_offspring_genome = null
+	# GenomeNative is RefCounted; clearing the reference releases it automatically.
+	current_offspring_genome = null
 
 	_hide_analysis()
 	_update_genetic_parameters()
@@ -356,6 +362,19 @@ func _migrate_legacy_retention_factor_key(data: Variant) -> void:
 
 
 ## Returns true when the parsed JSON contains every field required by BrainBuilder.
+func _migrate_legacy_initial_search_region(data: Variant) -> void:
+	if not (data is Dictionary) or not data.has("genome") or not (data["genome"] is Dictionary):
+		return
+	var genes: Dictionary = data["genome"]
+	if not genes.has("initial_search_region") and genes.has("connections"):
+		genes["initial_search_region"] = genes["connections"]
+
+func _migrate_legacy_connections_density(data: Variant) -> void:
+	if data is Dictionary and data.has("external_parameters") and data["external_parameters"] is Dictionary:
+		var external: Dictionary = data["external_parameters"]
+		if not external.has("connections_density"):
+			external["connections_density"] = "1"
+
 func _is_valid_genome_file(data: Variant) -> bool:
 	if not (data is Dictionary):
 		return false
@@ -378,7 +397,13 @@ func _is_valid_genome_file(data: Variant) -> bool:
 		if not (parameter_text is String):
 			return false
 
-		if parameter_text.is_empty() or _filter_characters(parameter_text, "0123456789") != parameter_text:
+		if parameter_name == "connections_density":
+			if not parameter_text.is_valid_float():
+				return false
+			var eta := float(parameter_text)
+			if is_nan(eta) or is_inf(eta) or eta <= 0.0:
+				return false
+		elif parameter_text.is_empty() or _filter_characters(parameter_text, "0123456789") != parameter_text:
 			return false
 
 	for gene_name in GENE_ORDER:
@@ -517,18 +542,19 @@ func _update_generate_button() -> void:
 	save_brain_button.disabled = current_offspring_genome == null or current_brain.is_empty() or not bool(current_brain.get("valid", false)) or generating
 
 
-## Builds a Genome object from one saved configuration.
-func _genome_from_config(config: Dictionary) -> Genome:
-	var genome = Genome.new()
+## Imports a saved genome into GenomeNative without changing its gene digits.
+func _genome_from_config(config: Dictionary) -> GenomeNative:
 	var data: Dictionary = config["genome"]
+	var gene_arrays: Dictionary = {}
 
 	for gene_name in GENE_ORDER:
-		genome.set(gene_name, _gene_from_text(data[gene_name]))
+		gene_arrays[gene_name] = _gene_from_text(data[gene_name])
 
-	return genome
+	var offspring: OffspringNative = OffspringNative.new()
+	return offspring.genome_from_dictionary(gene_arrays)
 
 
-## Converts a gene string into the integer array expected by Genome.
+## Converts a gene string into the integer array expected by the native genome importer.
 func _gene_from_text(text: String) -> Array[int]:
 	var gene: Array[int] = []
 
@@ -539,7 +565,7 @@ func _gene_from_text(text: String) -> Array[int]:
 
 
 ## Converts an integer gene array into the text format used by saved brain configurations.
-func _gene_to_text(gene: Array[int]) -> String:
+func _gene_to_text(gene: Array) -> String:
 	var text := ""
 
 	for digit in gene:
@@ -582,17 +608,20 @@ func _generate_offspring() -> void:
 	)
 	var num_inputs := int(external["num_inputs"])
 	var num_outputs := int(external["num_outputs"])
-	var parent_1 := _genome_from_config(config_1)
-	var parent_2 := _genome_from_config(config_2)
-	var offspring_generator := Offspring.new()
+	var parent_1: GenomeNative = _genome_from_config(config_1)
+	var parent_2: GenomeNative = _genome_from_config(config_2)
+	if parent_1 == null or parent_2 == null:
+		summary_label.text = "Could not import the parent genomes into GDExtension."
+		return
+
+	var offspring_generator: OffspringNative = OffspringNative.new()
 	var mutation_probability := float(mutation_probability_field.text)
+	var child: GenomeNative = offspring_generator.generate(parent_1, parent_2, mutation_probability)
+	if child == null:
+		summary_label.text = "Could not generate the native offspring genome."
+		return
 
-	if current_offspring_genome != null:
-		current_offspring_genome.free()
-
-	current_offspring_genome = offspring_generator.generate(parent_1, parent_2, mutation_probability)
-	parent_1.free()
-	parent_2.free()
+	current_offspring_genome = child
 	current_brain.clear()
 	generation_mutation_probability = mutation_probability
 
@@ -608,25 +637,24 @@ func _generate_offspring() -> void:
 
 	generation_thread = Thread.new()
 	var error := generation_thread.start(
-		_build_brain_thread.bind(current_offspring_genome, size, num_inputs, num_outputs)
+		_build_brain_thread.bind(current_offspring_genome, size, num_inputs, num_outputs, float(external["connections_density"]))
 	)
 	_update_generate_button()
 
 	if error != OK:
 		generation_thread = null
-		current_offspring_genome.free()
 		current_offspring_genome = null
 		summary_label.text = "Could not start brain-generation thread. Error: %s" % error_string(error)
 		_update_generate_button()
 
 
 ## Worker-thread entry point. It must not access the scene tree or UI nodes.
-func _build_brain_thread(genome: Genome, size: Vector3i, num_inputs: int, num_outputs: int) -> Dictionary:
-	var builder = BrainBuilder.new()
-	return builder.build(genome, size, num_inputs, num_outputs, _set_generation_progress_from_thread)
+func _build_brain_thread(genome: GenomeNative, size: Vector3i, num_inputs: int, num_outputs: int, connections_density: float) -> Dictionary:
+	var builder: BrainBuilderNative = BrainBuilderNative.new()
+	return builder.build(genome, size, num_inputs, num_outputs, _set_generation_progress_from_thread, connections_density)
 
 
-## Called by BrainBuilder from the worker thread. Only shared progress state is touched here.
+## Called by BrainBuilderNative from the worker thread. Only shared progress state is touched here.
 func _set_generation_progress_from_thread(percent: int) -> void:
 	generation_progress_mutex.lock()
 	generation_progress = percent
@@ -661,8 +689,11 @@ func _process(_delta: float) -> void:
 			return
 
 		_update_summary(current_brain, elapsed_seconds)
+		var completed_summary: String = summary_label.text
 		_setup_histogram(current_brain)
 		_setup_heatmap(current_brain)
+		var total_seconds: float = (Time.get_ticks_msec() - generation_start_time) / 1000.0
+		summary_label.text = "Offspring brain ready (100%)\n\n" + completed_summary + "\nTotal preparation time: %.3f s" % total_seconds
 		_update_generate_button()
 
 
@@ -695,6 +726,7 @@ func _update_summary(brain: Dictionary, elapsed_seconds: float) -> void:
 	var hebbian_sum = 0.0
 	var modulatory_release_sum = 0.0
 	var modulatory_sensitivity_sum = 0.0
+	var connection_energy_sum = 0.0
 	var weight_sum = 0.0
 	var incoming = {}
 
@@ -710,6 +742,7 @@ func _update_summary(brain: Dictionary, elapsed_seconds: float) -> void:
 		hebbian_sum += neuron["hebbian_plasticity_rate"]
 		modulatory_release_sum += neuron["modulatory_release_factor"]
 		modulatory_sensitivity_sum += neuron["modulatory_sensitivity"]
+		connection_energy_sum += neuron["connections_value"]
 
 		if neuron["polarity_factor"] > 0:
 			excitatory += 1
@@ -745,6 +778,11 @@ func _update_summary(brain: Dictionary, elapsed_seconds: float) -> void:
 	var mean_connections = 0 if outgoing_neuron_count == 0 else int(float(outgoing_connection_count) / outgoing_neuron_count)
 	var mean_weight = 0.0 if total_connections == 0 else weight_sum / total_connections
 	var neuron_denominator = max(1, total_neurons)
+	var isolated: Dictionary = brain.get("isolated_before_rescue", {})
+	var rescue_input: int = int(isolated.get("input", 0))
+	var rescue_internal: int = int(isolated.get("internal", 0))
+	var rescue_output: int = int(isolated.get("output", 0))
+	var rescue_evaluations: int = int(brain.get("rescue_candidates_total", 0))
 
 	summary_label.text = (
 		"Dimensions: %d x %d x %d\n" % [brain["size"].x, brain["size"].y, brain["size"].z]
@@ -752,9 +790,13 @@ func _update_summary(brain: Dictionary, elapsed_seconds: float) -> void:
 		+ "Beta: %.6f\n" % brain["beta"]
 		+ "Neurons: %d\n" % total_neurons
 		+ "Maximum connections per neuron: %d\n" % brain["max_connections"]
+		+ "Input influence psi: %.6f\n" % brain["input_gain"]
 		+ "Existing directional connections: %d\n" % total_connections
+		+ "Initial connections (1st/2nd pass): %d / %d\n" % [brain.get("initial_connections_first_pass", 0), brain.get("initial_connections_second_pass", 0)]
 		+ "Mean outgoing connections: %d\n" % mean_connections
 		+ "Outgoing degree range: %d - %d\n" % [min_out_degree, max_out_degree]
+		+ "Isolated before rescue (input/internal/output): %d / %d / %d\n" % [rescue_input, rescue_internal, rescue_output]
+		+ "Rescue candidates evaluated (H): %d\n" % rescue_evaluations
 		+ "Excitatory neurons: %d (%.2f%%)\n" % [excitatory, 100.0 * excitatory / neuron_denominator]
 		+ "Inhibitory neurons: %d (%.2f%%)\n\n" % [inhibitory, 100.0 * inhibitory / neuron_denominator]
 		+ "Mean activation threshold: %.6f\n" % (threshold_sum / neuron_denominator)
@@ -763,13 +805,13 @@ func _update_summary(brain: Dictionary, elapsed_seconds: float) -> void:
 		+ "Mean Hebbian plasticity rate: %.6f\n" % (hebbian_sum / neuron_denominator)
 		+ "Mean modulatory release factor: %.6f\n" % (modulatory_release_sum / neuron_denominator)
 		+ "Mean modulatory sensitivity: %.6f\n" % (modulatory_sensitivity_sum / neuron_denominator)
+		+ "Mean connection energy: %.6f\n" % (connection_energy_sum / neuron_denominator)
 		+ "Mean connection weight: %.6f\n\n" % mean_weight
-		+ "Refractory strength: %.6f\n" % brain["refractory_strength"]
+		+ "Maximum fatigue: %.6f\n" % brain["refractory_strength"]
 		+ "Exponential factor: %.6f\n" % brain["exponential_factor"]
 		+ "Modulatory persistence lambda: %.6f\n" % brain["lambda"]
 		+ "Modulatory spread nu: %.6f\n" % brain["nu"]
 		+ "Trace persistence mu: %.6f\n" % brain["mu"]
-		+ "Input influence psi: %.6f\n" % brain["input_gain"]
 		+ "Structural plasticity: %.6f\n" % brain["structural_plasticity"]
 		+ "Build time: %.3f s" % elapsed_seconds
 	)

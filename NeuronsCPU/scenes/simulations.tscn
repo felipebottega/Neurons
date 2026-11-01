@@ -1,0 +1,504 @@
+[gd_scene format=3 uid="uid://bxjjbcyfh7ogg"]
+
+[ext_resource type="Script" path="res://scripts/simulations/simulations.gd" id="1_q38lp"]
+[ext_resource type="Script" path="res://scripts/heatmap.gd" id="2_qux5w"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_3lnjx"]
+bg_color = Color(0.06469653, 0.064696535, 0.06469648, 1)
+
+[sub_resource type="Theme" id="Theme_5bjn8"]
+TooltipPanel/styles/panel = SubResource("StyleBoxFlat_3lnjx")
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_5bjn8"]
+bg_color = Color(0.05197096, 0.051970966, 0.051970914, 1)
+
+[sub_resource type="Theme" id="Theme_qux5w"]
+TooltipPanel/styles/panel = SubResource("StyleBoxFlat_5bjn8")
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_7ag8p"]
+bg_color = Color(0, 0, 0, 1)
+
+[sub_resource type="Theme" id="Theme_sx4as"]
+TooltipPanel/styles/panel = SubResource("StyleBoxFlat_7ag8p")
+
+[node name="Simulations" type="Node2D" unique_id=1422867934]
+script = ExtResource("1_q38lp")
+metadata/_edit_horizontal_guides_ = [86.0, 620.0, 755.0]
+metadata/_edit_vertical_guides_ = [260.0, 1301.0, 1514.0]
+
+[node name="LineEdit" type="LineEdit" parent="." unique_id=178173070]
+offset_left = 1471.0
+offset_top = 41.0
+offset_right = 1578.0
+offset_bottom = 72.0
+tooltip_text = "Dimension I"
+placeholder_text = "Dimension I"
+metadata/_edit_use_anchors_ = true
+
+[node name="Label" type="Label" parent="LineEdit" unique_id=1277530493]
+layout_mode = 0
+offset_left = -170.0
+offset_right = -77.0
+offset_bottom = 23.0
+text = "Dimension I"
+
+[node name="LineEdit2" type="LineEdit" parent="." unique_id=846846651]
+offset_left = 1471.0
+offset_top = 76.0
+offset_right = 1581.0
+offset_bottom = 107.0
+placeholder_text = "Dimension J"
+metadata/_edit_use_anchors_ = true
+
+[node name="Label" type="Label" parent="LineEdit2" unique_id=2033204413]
+layout_mode = 0
+offset_left = -170.0
+offset_right = -77.0
+offset_bottom = 23.0
+text = "Dimension J"
+
+[node name="LineEdit3" type="LineEdit" parent="." unique_id=1511679268]
+offset_left = 1471.0
+offset_top = 112.0
+offset_right = 1581.0
+offset_bottom = 143.0
+placeholder_text = "Dimension K"
+metadata/_edit_use_anchors_ = true
+
+[node name="Label" type="Label" parent="LineEdit3" unique_id=1150403724]
+layout_mode = 0
+offset_left = -170.0
+offset_right = -72.0
+offset_bottom = 23.0
+text = "Dimension K"
+
+[node name="LineEdit4" type="LineEdit" parent="." unique_id=1751646441]
+offset_left = 1571.0
+offset_top = 276.0
+offset_right = 1728.0
+offset_bottom = 307.0
+placeholder_text = "Generation Time"
+metadata/_edit_use_anchors_ = true
+
+[node name="Label" type="Label" parent="LineEdit4" unique_id=1152323739]
+layout_mode = 0
+offset_left = -57.0
+offset_right = -17.0
+offset_bottom = 23.0
+theme_override_font_sizes/font_size = 18
+text = "Time"
+
+[node name="LineEdit5" type="LineEdit" parent="." unique_id=514459578]
+offset_left = 1471.0
+offset_top = 189.0
+offset_right = 1642.0
+offset_bottom = 220.0
+tooltip_text = "Mutation probability per digit. Must be between 0 and 1."
+placeholder_text = "Mutation Probability"
+
+[node name="Label" type="Label" parent="LineEdit5" unique_id=279723965]
+layout_mode = 0
+offset_left = -170.0
+offset_right = -10.0
+offset_bottom = 23.0
+text = "Mutation Probability"
+
+[node name="LineEdit6" type="LineEdit" parent="." unique_id=1851744406]
+offset_left = 1471.0
+offset_top = 150.0
+offset_right = 1642.0
+offset_bottom = 181.0
+tooltip_text = "Mutation probability per digit. Must be between 0 and 1."
+placeholder_text = "Connections Density"
+
+[node name="Label" type="Label" parent="LineEdit6" unique_id=296467734]
+layout_mode = 0
+offset_left = -170.0
+offset_right = -11.0
+offset_bottom = 23.0
+text = "Connections Density"
+
+[node name="Speed" type="OptionButton" parent="." unique_id=2071458667]
+offset_left = 1430.0
+offset_top = 318.0
+offset_right = 1500.0
+offset_bottom = 349.0
+tooltip_text = "raw: uncapped neural iterations. /2, /4, /8: throttle to a fraction of the raw iteration rate, skipping frames and enforcing a real-time interval."
+selected = 0
+item_count = 4
+popup/item_0/text = "raw"
+popup/item_0/id = 0
+popup/item_1/text = "/2"
+popup/item_1/id = 1
+popup/item_2/text = "/4"
+popup/item_2/id = 2
+popup/item_3/text = "/8"
+popup/item_3/id = 3
+
+[node name="SpeedLabel" type="Label" parent="." unique_id=696370801]
+offset_left = 1300.0
+offset_top = 322.0
+offset_right = 1373.0
+offset_bottom = 353.0
+theme_override_font_sizes/font_size = 18
+text = "Speed"
+
+[node name="SimulationSelect" type="OptionButton" parent="." unique_id=470317920]
+offset_left = 1430.0
+offset_top = 359.0
+offset_right = 1498.0
+offset_bottom = 390.0
+tooltip_text = "Simulation 1 (the only GPU experiment currently implemented)."
+selected = 0
+item_count = 1
+popup/item_0/text = "1"
+popup/item_0/id = 0
+
+[node name="SimulationLabel" type="Label" parent="." unique_id=1138616487]
+offset_left = 1300.0
+offset_top = 362.0
+offset_right = 1414.0
+offset_bottom = 393.0
+theme_override_font_sizes/font_size = 18
+text = "Simulation"
+
+[node name="Label" type="Label" parent="." unique_id=1771166034]
+modulate = Color(0, 1, 1, 1)
+offset_left = 1299.0
+offset_top = 5.0
+offset_right = 1517.0
+offset_bottom = 36.0
+theme_override_font_sizes/font_size = 22
+text = "External Parameters"
+metadata/_edit_use_anchors_ = true
+
+[node name="Label2" type="Label" parent="." unique_id=1229533075]
+modulate = Color(0, 1, 1, 1)
+offset_left = 1299.0
+offset_top = 235.0
+offset_right = 1543.0
+offset_bottom = 266.0
+theme_override_font_sizes/font_size = 22
+text = "Simulation Parameters"
+metadata/_edit_use_anchors_ = true
+
+[node name="Start" type="Button" parent="." unique_id=1894957734]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1301.0
+offset_top = 419.0
+offset_right = 1454.0
+offset_bottom = 461.0
+theme_override_font_sizes/font_size = 24
+text = "Start"
+metadata/_edit_use_anchors_ = true
+
+[node name="Pause" type="Button" parent="." unique_id=1252262134]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1509.0
+offset_top = 419.0
+offset_right = 1641.0
+offset_bottom = 461.0
+theme_override_font_sizes/font_size = 24
+text = "Pause"
+metadata/_edit_use_anchors_ = true
+
+[node name="Save" type="Button" parent="." unique_id=825599750]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1301.0
+offset_top = 473.0
+offset_right = 1454.0
+offset_bottom = 515.0
+theme_override_font_sizes/font_size = 24
+text = "Save"
+metadata/_edit_use_anchors_ = true
+
+[node name="FreeMode" type="Button" parent="." unique_id=1611196595]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1301.0
+offset_top = 528.0
+offset_right = 1454.0
+offset_bottom = 570.0
+theme_override_font_sizes/font_size = 24
+text = "Free Mode"
+metadata/_edit_use_anchors_ = true
+
+[node name="Load" type="Button" parent="." unique_id=1107466970]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1509.0
+offset_top = 473.0
+offset_right = 1641.0
+offset_bottom = 515.0
+theme_override_font_sizes/font_size = 24
+text = "Load"
+metadata/_edit_use_anchors_ = true
+
+[node name="SaveBrain" type="Button" parent="." unique_id=1262852370]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1509.0
+offset_top = 528.0
+offset_right = 1641.0
+offset_bottom = 570.0
+theme_override_font_sizes/font_size = 24
+text = "Save Brain"
+metadata/_edit_use_anchors_ = true
+
+[node name="Summary" type="Label" parent="." unique_id=393369027]
+offset_left = 17.0
+offset_top = 3.0
+offset_right = 360.0
+offset_bottom = 597.0
+theme_override_constants/line_spacing = 1
+theme_override_font_sizes/font_size = 15
+
+[node name="AgentInfo" type="Label" parent="." unique_id=773878548]
+offset_left = 1271.0
+offset_top = 579.0
+offset_right = 1431.0
+offset_bottom = 873.0
+theme_override_font_sizes/font_size = 14
+
+[node name="AgentInfo2" type="Label" parent="." unique_id=1468845094]
+offset_left = 1468.0
+offset_top = 579.0
+offset_right = 1635.0
+offset_bottom = 873.0
+theme_override_font_sizes/font_size = 14
+
+[node name="AgentInfo3" type="Label" parent="." unique_id=2034570903]
+offset_left = 1610.0
+offset_top = 579.0
+offset_right = 1737.0
+offset_bottom = 873.0
+theme_override_font_sizes/font_size = 14
+
+[node name="SimulationSpace" type="Node2D" parent="." unique_id=1010751342]
+position = Vector2(594, 11)
+
+[node name="NumTestsLabel" type="Label" parent="SimulationSpace" unique_id=1300910457]
+visible = false
+z_index = 10
+offset_left = 310.0
+offset_top = 12.0
+offset_right = 628.0
+offset_bottom = 67.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 34
+text = "Num Tests: 3"
+horizontal_alignment = 2
+
+[node name="OptionButton" type="OptionButton" parent="." unique_id=1237191194]
+z_index = 10
+offset_left = 1079.0
+offset_top = 691.0
+offset_right = 1237.0
+offset_bottom = 722.0
+tooltip_text = "Fitness evolution across generations.
+
+Mean fitness is the arithmetic mean of the fitness values of all 100
+agents in a generation.
+
+This mean includes the 5 renewed agents introduced by the current
+reproduction methodology: 3 descendants produced by elite × new-random
+crossovers and 2 fully random agents.
+
+Best fitness is the highest individual fitness obtained in that
+generation.
+
+Higher values indicate better overall performance under the current
+simulation's fitness function."
+theme = SubResource("Theme_5bjn8")
+
+[node name="OptionButton2" type="OptionButton" parent="." unique_id=525999736]
+z_index = 10
+offset_left = 1079.0
+offset_top = 842.0
+offset_right = 1237.0
+offset_bottom = 873.0
+tooltip_text = "Genetic diversity is the mean normalized Hamming distance between all
+pairs of genomes in the main evolving population.
+
+The 5 renewed agents introduced each generation are excluded from this
+calculation: 3 descendants produced by elite × new-random crossovers
+and 2 fully random agents.
+
+For genomes g_i and g_j of length L, their normalized Hamming distance is
+
+d(g_i,g_j) = (1/L) * sum_k [g_i(k) != g_j(k)].
+
+The reported diversity is the mean of d(g_i,g_j) over all unordered
+pairs of the remaining agents.
+
+A value of 0 means all compared genomes are identical. A value of 1
+means every compared pair differs at every gene position.
+
+Equivalent percentage interpretation:
+1      = 100% of gene digits differ on average
+1e-1 = 10% differ on average
+1e-2 = 1% differ on average
+1e-3 = 0.1% differ on average
+1e-4 = 0.01% differ on average
+0      = 0% differ on average
+
+These values are pairwise averages, so the implied number of differing
+gene digits per pair does not need to be an integer."
+mouse_filter = 1
+theme = SubResource("Theme_qux5w")
+
+[node name="Title2" type="Label" parent="." unique_id=1660812460]
+offset_left = 35.0
+offset_top = 547.0
+offset_right = 360.0
+offset_bottom = 581.0
+tooltip_text = "This heatmap shows the relation between  
+two selected genes and agent fitness.
+
+Each axis represents one selected gene. 
+Gene values are ordered using a
+quaternary Gray code. Nearby positions 
+therefore tend to represent small genetic 
+changes.
+
+Each cell contains the mean fitness
+of all agents that fell into that bin.
+Data from all generations in the
+current simulation are accumulated.
+
+The color scale is fixed from -1 to 1.
+Bright pink cells have no samples yet.
+
+Changing either gene selector rebuilds
+the heatmap from the stored history.
+"
+mouse_filter = 1
+theme = SubResource("Theme_sx4as")
+theme_override_colors/font_color = Color(0.8862745, 0.15686275, 0.15686275, 1)
+theme_override_font_sizes/font_size = 18
+text = "Genetic x Fitness Landscape"
+
+[node name="Heatmap" type="Control" parent="." unique_id=1915224881]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 3.0
+offset_top = 581.0
+offset_right = 268.0
+offset_bottom = 828.0
+script = ExtResource("2_qux5w")
+
+[node name="GeneX" type="OptionButton" parent="." unique_id=40436449]
+offset_left = 279.0
+offset_top = 614.0
+offset_right = 319.0
+offset_bottom = 634.0
+
+[node name="Label" type="Label" parent="GeneX" unique_id=1250760603]
+layout_mode = 0
+offset_top = -34.0
+offset_right = 40.0
+theme_override_font_sizes/font_size = 24
+text = "X: "
+
+[node name="GeneY" type="OptionButton" parent="." unique_id=2141861642]
+offset_left = 279.0
+offset_top = 698.0
+offset_right = 319.0
+offset_bottom = 718.0
+
+[node name="Label" type="Label" parent="GeneY" unique_id=1394442660]
+layout_mode = 0
+offset_top = -34.0
+offset_right = 40.0
+theme_override_font_sizes/font_size = 24
+text = "Y:"
+
+[node name="Resolution" type="OptionButton" parent="." unique_id=1320946516]
+offset_left = 279.0
+offset_top = 782.0
+offset_right = 319.0
+offset_bottom = 802.0
+
+[node name="Label" type="Label" parent="Resolution" unique_id=714732354]
+layout_mode = 0
+offset_top = -34.0
+offset_right = 40.0
+theme_override_font_sizes/font_size = 24
+text = "Resolution:"
+
+[node name="HeatmapTrackingLabel" type="Label" parent="." unique_id=1828532169]
+offset_left = 438.0
+offset_top = 748.0
+offset_right = 586.0
+offset_bottom = 782.0
+theme_override_font_sizes/font_size = 24
+text = "Tracking:"
+
+[node name="HeatmapTracking" type="Button" parent="." unique_id=2094371381]
+offset_left = 438.0
+offset_top = 785.0
+offset_right = 524.0
+offset_bottom = 818.0
+tooltip_text = "ON: record phenotype-fitness samples and update the heatmap for each new generation.
+OFF: freeze the current heatmap and skip phenotype collection. Generations skipped while OFF are not recovered when switched back ON."
+toggle_mode = true
+button_pressed = true
+text = "ON"
+
+[node name="Elite" type="Button" parent="." unique_id=426769357]
+offset_left = 1430.0
+offset_top = 276.0
+offset_right = 1498.0
+offset_bottom = 307.0
+tooltip_text = "Show only the three surviving elites from the previous generation.
+All 100 agents still participate in the simulation and fitness calculations.
+No previous-generation elites are available in the initial generation."
+toggle_mode = true
+text = "OFF"
+
+[node name="EliteLabel" type="Label" parent="Elite" unique_id=789457855]
+layout_mode = 0
+offset_left = -130.0
+offset_top = 4.0
+offset_right = -29.0
+offset_bottom = 35.0
+theme_override_font_sizes/font_size = 18
+text = "Only Elite"
+
+[node name="ShowBrain" type="Button" parent="." unique_id=186625393]
+offset_left = 1644.0
+offset_top = 356.0
+offset_right = 1712.0
+offset_bottom = 387.0
+tooltip_text = "OFF: show selected agent statistics. ON: preview the selected agent brain and live neural signals. GPU readback and 3D preview update only while ON."
+toggle_mode = true
+text = "OFF"
+
+[node name="ShowBrainLabel" type="Label" parent="ShowBrain" unique_id=1168484783]
+layout_mode = 0
+offset_left = -131.0
+offset_top = 4.0
+offset_right = -11.0
+offset_bottom = 35.0
+theme_override_font_sizes/font_size = 18
+text = "Show Brain"
+
+[node name="NumAgents" type="SpinBox" parent="." unique_id=1423695234]
+offset_left = 1648.0
+offset_top = 317.0
+offset_right = 1734.5
+offset_bottom = 348.0
+tooltip_text = "Show only the three surviving elites from the previous generation.
+All 100 agents still participate in the simulation and fitness calculations.
+No previous-generation elites are available in the initial generation."
+min_value = 15.0
+max_value = 200.0
+value = 100.0
+
+[node name="NumAgentsLabel" type="Label" parent="NumAgents" unique_id=1819318786]
+layout_mode = 0
+offset_left = -136.0
+offset_top = 2.0
+offset_right = -11.0
+offset_bottom = 33.0
+theme_override_font_sizes/font_size = 18
+text = "NumAgents"

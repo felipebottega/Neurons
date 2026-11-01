@@ -4,6 +4,7 @@
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/packed_float32_array.hpp>
 #include <godot_cpp/variant/string.hpp>
 
 #include <cstdint>
@@ -29,6 +30,7 @@ public:
 	int64_t advance(double delta_seconds);
 	Dictionary get_brain_snapshot() const;
 	Dictionary get_viewer_state() const;
+	PackedFloat32Array get_visual_signals() const;
 
 	void set_profiling_enabled(bool enabled);
 	bool get_profiling_enabled() const;
@@ -131,6 +133,7 @@ private:
 		int32_t target_index = 0;
 		float weight = 0.0f;
 		float eligibility_trace = 0.0f;
+		float decay_residual = 0.0f;
 	};
 
 	std::vector<std::vector<Connection>> connections;

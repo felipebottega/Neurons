@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://dwnapmp2uip0"
+path="res://.godot/imported/brain_neurons.glsl-17075c220ea9233bf7371290f4b36d3b.res"
+
+[deps]
+
+source_file="res://shaders/brain_neurons.glsl"
+dest_files=["res://.godot/imported/brain_neurons.glsl-17075c220ea9233bf7371290f4b36d3b.res"]
+
+[params]
+

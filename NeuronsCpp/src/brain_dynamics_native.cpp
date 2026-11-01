@@ -1,5 +1,6 @@
 // OPTIMIZED INITIALIZATION VERSION - 2026-09-13
 #include "brain_dynamics_native.h"
+#include "compensated_decay.h"
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/array.hpp>
@@ -24,6 +25,7 @@ void BrainDynamicsNative::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("advance", "delta_seconds"), &BrainDynamicsNative::advance);
 	ClassDB::bind_method(D_METHOD("get_brain_snapshot"), &BrainDynamicsNative::get_brain_snapshot);
 	ClassDB::bind_method(D_METHOD("get_viewer_state"), &BrainDynamicsNative::get_viewer_state);
+	ClassDB::bind_method(D_METHOD("get_visual_signals"), &BrainDynamicsNative::get_visual_signals);
 
 	ClassDB::bind_method(D_METHOD("set_profiling_enabled", "enabled"), &BrainDynamicsNative::set_profiling_enabled);
 	ClassDB::bind_method(D_METHOD("get_profiling_enabled"), &BrainDynamicsNative::get_profiling_enabled);
@@ -503,6 +505,7 @@ int32_t BrainDynamicsNative::_propagate_signals() {
 					float weight = connection.weight;
 					incoming_signals[target_index] += transmission_scale * weight;
 					weight += hebbian_rate * (1.0f - weight);
+					connection.decay_residual *= 1.0f - hebbian_rate;
 					const float eligibility = trace_keep * connection.eligibility_trace + eligibility_source_scale * normalized_signals[target_index];
 					connection.eligibility_trace = eligibility;
 
@@ -513,11 +516,14 @@ int32_t BrainDynamicsNative::_propagate_signals() {
 						weight += modulation * eligibility * weight;
 					}
 
+					// The bounded plasticity maps contract existing rounding debt.
+					connection.decay_residual *= 1.0f - std::abs(modulation) * eligibility;
+
 					float connection_decrement = decrement;
 					if (output_flags[target_index] != 0) {
 						connection_decrement *= activity_traces[target_index];
 					}
-					weight = std::max(weight - connection_decrement, 0.0f);
+					weight = neurons_numeric::subtract_decay(weight, connection_decrement, connection.decay_residual);
 
 					if (weight <= 0.0f) {
 						_remove_connection_at(source_index, connection_index, target_index);
@@ -546,11 +552,14 @@ int32_t BrainDynamicsNative::_propagate_signals() {
 						weight += modulation * eligibility * weight;
 					}
 
+					// The bounded plasticity maps contract existing rounding debt.
+					connection.decay_residual *= 1.0f - std::abs(modulation) * eligibility;
+
 					float connection_decrement = decrement;
 					if (output_flags[target_index] != 0) {
 						connection_decrement *= activity_traces[target_index];
 					}
-					weight = std::max(weight - connection_decrement, 0.0f);
+					weight = neurons_numeric::subtract_decay(weight, connection_decrement, connection.decay_residual);
 
 					if (weight <= 0.0f) {
 						_remove_connection_at(source_index, connection_index, target_index);
@@ -729,28 +738,13 @@ int32_t BrainDynamicsNative::_apply_structural_plasticity() {
 }
 
 int32_t BrainDynamicsNative::_random_structural_target_index(int32_t source_index) {
-	const int32_t source_z = z_indices[source_index];
-	const int32_t target_k_min = std::max(0, source_z - 2);
-	const int32_t target_k_max = std::min(size_k - 1, source_z + 2);
-	const int32_t slice_count = target_k_max - target_k_min + 1;
-	const int32_t candidate_count = plane_size * slice_count - 1;
-
-	if (candidate_count <= 0) {
-		return -1;
-	}
-
-	const int32_t source_slot = spatial_indices[source_index] - plane_size * target_k_min;
-	std::uniform_int_distribution<int32_t> slot_distribution(0, candidate_count - 1);
-	int32_t random_slot = slot_distribution(structural_rng);
-
-	if (random_slot >= source_slot) {
-		++random_slot;
-	}
-
-	const int32_t local_k = random_slot / plane_size;
-	const int32_t within_slice = random_slot - local_k * plane_size;
-	const int32_t target_spatial_index = within_slice + plane_size * (target_k_min + local_k);
-	return neuron_index_by_spatial_index[target_spatial_index];
+	// Uniform sampling over all other brain neurons. No slice restriction.
+	if (neuron_count <= 1) return -1;
+	std::uniform_int_distribution<int32_t> distribution(0, neuron_count - 2);
+	int32_t spatial_slot = distribution(structural_rng);
+	const int32_t source_spatial_index = spatial_indices[source_index];
+	if (spatial_slot >= source_spatial_index) ++spatial_slot;
+	return neuron_index_by_spatial_index[spatial_slot];
 }
 
 void BrainDynamicsNative::_append_connection(int32_t source_index, int32_t target_index, float weight, float eligibility) {
@@ -810,6 +804,7 @@ Dictionary BrainDynamicsNative::get_brain_snapshot() const {
 			connection["target_index"] = target_index;
 			connection["weight"] = native_connection.weight;
 			connection["eligibility_trace"] = native_connection.eligibility_trace;
+			connection["decay_residual"] = native_connection.decay_residual;
 			snapshot_connections[connection_index] = connection;
 		}
 
@@ -819,6 +814,17 @@ Dictionary BrainDynamicsNative::get_brain_snapshot() const {
 
 	snapshot["neurons"] = neurons;
 	return snapshot;
+}
+
+// Read-only, spatially ordered normalized signals for the live 3D brain preview.
+// Rendering does not feed back into the neural dynamics or modify its state.
+PackedFloat32Array BrainDynamicsNative::get_visual_signals() const {
+	PackedFloat32Array result;
+	result.resize(neuron_count);
+	for (int32_t index = 0; index < neuron_count; ++index) {
+		result.set(spatial_indices[static_cast<size_t>(index)], normalized_signals[static_cast<size_t>(index)]);
+	}
+	return result;
 }
 
 // Read-only UI snapshot. The core neural dynamics never depends on this method.

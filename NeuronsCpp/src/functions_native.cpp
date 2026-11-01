@@ -133,9 +133,18 @@ float FunctionsNative::beta_value(const std::vector<int32_t> &x, int32_t I, int3
 float FunctionsNative::a_value(int32_t i, int32_t j, int32_t k, const std::vector<int32_t> &x, int32_t I, int32_t J, int32_t K) {
 	const int32_t p = static_cast<int32_t>(x.size());
 	const int32_t n = static_cast<int32_t>(std::llround(std::pow(static_cast<float>(p), 1.0f / 3.0f)));
-	const float a = static_cast<float>(i) / static_cast<float>(I - 1);
-	const float b = static_cast<float>(j) / static_cast<float>(J - 1);
-	const float c = static_cast<float>(k) / static_cast<float>(K - 1);
+	// The spatial field has fixed lattice length 16, irrespective of brain dimensions.
+	// Precompute basis terms once per axis, as in brain_neurons.glsl.
+	constexpr float A_SPATIAL_SCALE = 16.0f;
+	std::vector<float> basis_i(static_cast<size_t>(n));
+	std::vector<float> basis_j(static_cast<size_t>(n));
+	std::vector<float> basis_k(static_cast<size_t>(n));
+	for (int32_t mode = 0; mode < n; ++mode) {
+		const float omega = std::sqrt(static_cast<float>(mode + 1));
+		basis_i[mode] = std::cos(PI_VALUE * omega * static_cast<float>(i) / A_SPATIAL_SCALE);
+		basis_j[mode] = std::cos(PI_VALUE * omega * static_cast<float>(j) / A_SPATIAL_SCALE);
+		basis_k[mode] = std::cos(PI_VALUE * omega * static_cast<float>(k) / A_SPATIAL_SCALE);
+	}
 	float y = 0.0f;
 
 	for (int32_t r = 0; r < n; ++r) {
@@ -143,10 +152,7 @@ float FunctionsNative::a_value(int32_t i, int32_t j, int32_t k, const std::vecto
 			for (int32_t q = 0; q < n; ++q) {
 				const int32_t t = q + n * s + n * n * r;
 				const float coefficient = 2.0f * static_cast<float>(x[static_cast<size_t>(t)]) / 3.0f - 1.0f;
-				y += coefficient
-						* std::cos(PI_VALUE * static_cast<float>(r) * a)
-						* std::cos(PI_VALUE * static_cast<float>(s) * b)
-						* std::cos(PI_VALUE * static_cast<float>(q) * c);
+				y += coefficient * basis_i[r] * basis_j[s] * basis_k[q];
 			}
 		}
 	}
