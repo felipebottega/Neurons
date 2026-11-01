@@ -104,12 +104,17 @@ These values indicate **straight-line relative displacement**, not a traversable
 | **3** | Move up | Negative `y` |
 | **4** | Move down | Positive `y` |
 
-For output signals `o₁` through `o₄`, movement during one simulation step is
+For output signals `o_1` through `o₄`, movement during one simulation step is
+
 
 $$
-\Delta\mathbf{p}=v_{\mathrm{agent}}\,\Delta t
-\begin{pmatrix}o_2-o_1\\o_4-o_3\end{pmatrix}.
+\Delta x = v_{\mathrm{agent}}\,\Delta t\,(o_2-o_1)
 $$
+
+$$
+\Delta y = v_{\mathrm{agent}}\,\Delta t\,(o_4-o_3)
+$$
+
 
 The default speed is **600 px/s** and `Δt = 1/60 s`. Opposing outputs cancel on their respective axes. The drive vector is **not** normalized to unit length, so diagonal movement can have greater magnitude than movement along one axis.
 
@@ -184,7 +189,7 @@ Four **axis-aligned rays** are cast in fixed world directions from the agent cen
 If `d` is clearance in pixels and `R = 220 px`, the sensor value is
 
 $$
-\boxed{\;s_{\mathrm{wall}}(d)=1-\operatorname{clamp}\!\left(\frac{d}{R},0,1\right)\;}
+s_{\mathrm{wall}}(d) = \max\left(0, 1-\frac{d}{R}\right), \qquad R = 220\,\mathrm{px}
 $$
 
 | Clearance | Sensor value | Interpretation |
@@ -218,13 +223,19 @@ The generator builds a Dijkstra distance field on a free-space grid with approxi
 
 Let `D(p)` be the estimated traversable distance from position `p` to the target, and `D₀ = D(start)`:
 
+
 $$
-\begin{aligned}
-P(\mathbf p)&=\operatorname{clamp}\!\left(1-\frac{D(\mathbf p)}{D_0},\;0,\;1\right),\\[4pt]
-F_{\mathrm{trial}}&=\max_{0\le t\le T}P(\mathbf p(t)),\\[4pt]
-F_{\mathrm{agent}}&=\frac{1}{3}\sum_{k=1}^{3}F_{\mathrm{trial},k}.
-\end{aligned}
+P(\mathbf{p}) = \max\left(0, 1 - \frac{D(\mathbf{p})}{D_0}\right)
 $$
+
+$$
+F_{\mathrm{trial}} = \max_{0 \leq t \leq T} P(\mathbf{p}(t))
+$$
+
+$$
+F_{\mathrm{agent}} = \frac{1}{3} \sum_{k=1}^{3} F_{\mathrm{trial},k}
+$$
+
 
 The implementation explicitly assigns progress **1** when the agent square reaches or overlaps the target square. The three trials are averaged for each agent; the generation's **mean fitness** averages the agent fitnesses across the entire population.
 
