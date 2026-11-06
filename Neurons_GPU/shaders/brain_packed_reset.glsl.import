@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://c0atejmsule4c"
+path="res://.godot/imported/brain_packed_reset.glsl-02676ec2f0e999773db86ed880155111.res"
+
+[deps]
+
+source_file="res://shaders/brain_packed_reset.glsl"
+dest_files=["res://.godot/imported/brain_packed_reset.glsl-02676ec2f0e999773db86ed880155111.res"]
+
+[params]
+

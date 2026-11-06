@@ -32,6 +32,17 @@ const SIMULATION_4_TOUCH_TOLERANCE: float = 0.05
 const SIMULATION_5_ANGULAR_SECTOR_COUNT: int = 12
 const SIMULATION_5_DIFFICULTY_BASE_THRESHOLD: float = 0.7
 const SIMULATION_5_DIFFICULTY_THRESHOLD_STEP: float = 0.02
+# Simulation 6 shares Simulation 4's environment and collision solver,
+# while adopting the final-second fitness and sector curriculum of the GPU version.
+# A ray measures distance from the agent center to the first collision surface
+# (inflated obstacle or arena boundary). 0 = out of range; 1 = contact.
+const SIMULATION_6_SENSOR_RANGE: float = 600.0
+const SIMULATION_6_DIAGONAL_COMPONENT: float = 0.7071067811865476
+const SIMULATION_6_SENSOR_DIRECTIONS = [
+	Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN,
+	Vector2(-SIMULATION_6_DIAGONAL_COMPONENT, -SIMULATION_6_DIAGONAL_COMPONENT), Vector2(SIMULATION_6_DIAGONAL_COMPONENT, -SIMULATION_6_DIAGONAL_COMPONENT),
+	Vector2(-SIMULATION_6_DIAGONAL_COMPONENT, SIMULATION_6_DIAGONAL_COMPONENT), Vector2(SIMULATION_6_DIAGONAL_COMPONENT, SIMULATION_6_DIAGONAL_COMPONENT),
+]
 
 const BRAIN_EXPLORER_GENE_ORDER = [
 	"max_connections",
@@ -151,6 +162,8 @@ var profiling_print_interval_steps: int = 300
 @export var evolution_graph_border_color: Color = Color(0.55, 0.75, 0.70, 1.0)
 @export var evolution_graph_mean_color: Color = Color(0.25, 0.85, 1.0, 1.0)
 @export var evolution_graph_best_color: Color = Color(1.0, 0.82, 0.2, 1.0)
+@export var simulation_agent_color: Color = Color.WHITE
+@export var simulation_elite_agent_color: Color = Color(1.0, 0.18, 0.18, 1.0)
 
 
 @onready var dimension_i_field: LineEdit = $LineEdit
@@ -238,6 +251,8 @@ var simulation_4_obstacle_size: Vector2 = Vector2.ZERO
 var simulation_4_obstacle_angle: float = 0.0
 var simulation_5_target_sector_order: Array[int] = []
 var simulation_5_difficulty: int = 3
+var simulation_6_target_sector_order: Array[int] = []
+var simulation_6_difficulty: int = 3
 
 var free_mode_active: bool = false
 var target_dragging: bool = false
@@ -811,9 +826,13 @@ func _setup_simulation(index: int) -> void:
 			_setup_simulation_4()
 		4:
 			_setup_simulation_5()
+		5:
+			_setup_simulation_6()
 		_:
 			simulation_selector.select(0)
 			_setup_simulation_1()
+	# Fit thirteen sensor values in the existing agent information panel.
+	agent_info_label.add_theme_font_size_override("font_size", 12 if index == 5 else 14)
 	_update_simulation_5_num_tests_label()
 
 
@@ -953,6 +972,37 @@ func _setup_simulation_5() -> void:
 
 	target = TargetClass.new(
 		Callable(self, "_simulation_5_reset_target"),
+		Callable(self, "_simulation_1_update_target")
+	)
+
+
+func _setup_simulation_6() -> void:
+	# Simulation 4 obstacle/physics with 13 channels, using the final-second
+	# proximity fitness and sector curriculum of the current GPU Simulation 6.
+	# Inputs 1-4 = target displacement, 5 = binary contact;
+	# 6-13 = W, E, N, S, NW, NE, SW, SE obstacle proximity.
+	num_inputs = 13
+	num_outputs = 4
+	target_test_count = simulation_6_difficulty
+	target_position_change_interval_seconds = 0.0
+	evaluation_behavior = Callable(self, "_simulation_5_evaluate_agent")
+	fitness_reset_behavior = Callable(self, "_simulation_1_reset_fitness")
+	fitness_accumulation_behavior = Callable(self, "_simulation_5_accumulate_fitness")
+	fitness_behavior = Callable(self, "_simulation_5_fitness")
+	agent_info_behavior = Callable(self, "_simulation_6_agent_info")
+
+	agents.clear()
+	for _agent_index in agent_count:
+		agents.append(AgentClass.new(
+			num_inputs,
+			num_outputs,
+			Callable(self, "_simulation_4_reset_agent"),
+			Callable(self, "_simulation_6_update_agent_inputs"),
+			Callable(self, "_simulation_4_apply_agent_outputs")
+		))
+
+	target = TargetClass.new(
+		Callable(self, "_simulation_6_reset_target"),
 		Callable(self, "_simulation_1_update_target")
 	)
 
@@ -1219,7 +1269,7 @@ func _draw() -> void:
 	if target == null:
 		return
 
-	if simulation_selector.selected == 3 or simulation_selector.selected == 4:
+	if simulation_selector.selected == 3 or simulation_selector.selected == 4 or simulation_selector.selected == 5:
 		_draw_simulation_4_obstacle(origin)
 
 	var target_size = Vector2(target_square_size, target_square_size)
@@ -1235,7 +1285,8 @@ func _draw() -> void:
 			continue
 		var agent_position: Vector2 = agent.state["position"]
 		var agent_rect = Rect2(origin + agent_position - agent_size * 0.5, agent_size)
-		draw_rect(agent_rect, Color.WHITE, true)
+		var agent_color: Color = simulation_elite_agent_color if agent_index in previous_generation_elite_indices else simulation_agent_color
+		draw_rect(agent_rect, agent_color, true)
 		if agent_index == selected_agent_index:
 			draw_rect(agent_rect.grow(2.0), Color.YELLOW, false, 2.0)
 
@@ -1634,7 +1685,7 @@ func _input(event: InputEvent) -> void:
 			clampf(dragged_position.x, half_target_size, simulation_size.x - half_target_size),
 			clampf(dragged_position.y, half_target_size, simulation_size.y - half_target_size)
 		)
-		if simulation_selector.selected == 3 or simulation_selector.selected == 4:
+		if simulation_selector.selected == 3 or simulation_selector.selected == 4 or simulation_selector.selected == 5:
 			_simulation_4_update_obstacle(false)
 		queue_redraw()
 		get_viewport().set_input_as_handled()
@@ -2162,6 +2213,8 @@ func _start_experiment_from_population(new_generation: bool = true) -> void:
 		target_test_index = 0
 		if simulation_selector.selected == 4:
 			_simulation_5_shuffle_target_sectors()
+		elif simulation_selector.selected == 5:
+			_simulation_6_shuffle_target_sectors()
 		generation_real_start_us = Time.get_ticks_usec()
 		generation_real_time_seconds = 0.0
 		generation_fitness_sums = PackedFloat64Array()
@@ -2258,6 +2311,74 @@ func _simulation_4_update_agent_inputs(agent) -> void:
 	_simulation_1_update_agent_inputs(agent)
 	# Input 5 is touch only; it does not reveal obstacle direction or a route.
 	agent.input_signals[4] = 1.0 if _simulation_4_touching_surface(agent.state["position"]) else 0.0
+
+
+func _simulation_6_update_agent_inputs(agent) -> void:
+	# Retain all five original Simulation 4 channels, unchanged.
+	_simulation_4_update_agent_inputs(agent)
+	_simulation_6_write_obstacle_proximity(agent.state["position"], agent)
+
+
+func _simulation_6_write_obstacle_proximity(position: Vector2, agent) -> void:
+	# Match the inflation used in the Simulation 4 swept-collision solver.
+	# The obstacle may move in Free Mode, so read its current transform.
+	var half_agent: float = agent_square_size * 0.5
+	var cos_angle: float = cos(simulation_4_obstacle_angle)
+	var sin_angle: float = sin(simulation_4_obstacle_angle)
+	var relative: Vector2 = position - simulation_4_obstacle_center
+	var local_position: Vector2 = Vector2(
+		relative.x * cos_angle + relative.y * sin_angle,
+		-relative.x * sin_angle + relative.y * cos_angle
+	)
+	var projection: float = absf(cos_angle) + absf(sin_angle)
+	var half_extents: Vector2 = simulation_4_obstacle_size * 0.5 + Vector2.ONE * (half_agent * projection)
+
+	for sensor_index in 8:
+		var direction: Vector2 = SIMULATION_6_SENSOR_DIRECTIONS[sensor_index]
+		# Arena boundaries are also collision surfaces (as in the contact sensor).
+		# Ray directions are unit vectors, so distances are in world pixels.
+		var distance: float = INF
+		if direction.x < -0.00000001:
+			distance = minf(distance, (half_agent - position.x) / direction.x)
+		elif direction.x > 0.00000001:
+			distance = minf(distance, (simulation_size.x - half_agent - position.x) / direction.x)
+		if direction.y < -0.00000001:
+			distance = minf(distance, (half_agent - position.y) / direction.y)
+		elif direction.y > 0.00000001:
+			distance = minf(distance, (simulation_size.y - half_agent - position.y) / direction.y)
+
+		var local_direction: Vector2 = Vector2(
+			direction.x * cos_angle + direction.y * sin_angle,
+			-direction.x * sin_angle + direction.y * cos_angle
+		)
+		distance = minf(distance, _simulation_6_ray_box_distance(local_position, local_direction, half_extents))
+		agent.input_signals[5 + sensor_index] = 1.0 - clampf(maxf(distance, 0.0) / SIMULATION_6_SENSOR_RANGE, 0.0, 1.0)
+
+
+func _simulation_6_ray_box_distance(origin: Vector2, direction: Vector2, half_extents: Vector2) -> float:
+	# Slab intersection with the same (inflated) box used for agent collision.
+	# Negative entry and nonnegative exit mean the ray starts inside/on the box.
+	var entry: float = -INF
+	var exit: float = INF
+	if absf(direction.x) < 0.00000001:
+		if absf(origin.x) > half_extents.x:
+			return INF
+	else:
+		var tx1: float = (-half_extents.x - origin.x) / direction.x
+		var tx2: float = (half_extents.x - origin.x) / direction.x
+		entry = maxf(entry, minf(tx1, tx2))
+		exit = minf(exit, maxf(tx1, tx2))
+	if absf(direction.y) < 0.00000001:
+		if absf(origin.y) > half_extents.y:
+			return INF
+	else:
+		var ty1: float = (-half_extents.y - origin.y) / direction.y
+		var ty2: float = (half_extents.y - origin.y) / direction.y
+		entry = maxf(entry, minf(ty1, ty2))
+		exit = minf(exit, maxf(ty1, ty2))
+	if exit < 0.0 or entry > exit:
+		return INF
+	return maxf(entry, 0.0)
 
 
 func _simulation_4_touching_surface(position: Vector2) -> bool:
@@ -2493,8 +2614,9 @@ func _simulation_4_reset_target(selected_target) -> void:
 func _update_simulation_5_num_tests_label() -> void:
 	if not is_instance_valid(simulation_5_num_tests_label):
 		return
-	simulation_5_num_tests_label.visible = simulation_selector.selected == 4
-	simulation_5_num_tests_label.text = "Num Tests: %d" % simulation_5_difficulty
+	simulation_5_num_tests_label.visible = simulation_selector.selected == 4 or simulation_selector.selected == 5
+	var difficulty: int = simulation_6_difficulty if simulation_selector.selected == 5 else simulation_5_difficulty
+	simulation_5_num_tests_label.text = "Num Tests: %d" % difficulty
 
 
 func _simulation_5_advance_difficulty_if_ready() -> void:
@@ -2511,6 +2633,35 @@ func _simulation_5_advance_difficulty_if_ready() -> void:
 	_update_simulation_5_num_tests_label()
 
 
+func _simulation_6_advance_difficulty_if_ready() -> void:
+	# Decide only after completing all tests of the current generation.
+	if simulation_selector.selected != 5 or simulation_6_difficulty >= SIMULATION_5_ANGULAR_SECTOR_COUNT:
+		return
+	var required_mean: float = SIMULATION_5_DIFFICULTY_BASE_THRESHOLD + SIMULATION_5_DIFFICULTY_THRESHOLD_STEP * float(simulation_6_difficulty - 3)
+	if float(_generation_fitness_statistics()["mean"]) <= required_mean:
+		return
+	simulation_6_difficulty += 1
+	target_test_count = simulation_6_difficulty
+	_update_simulation_5_num_tests_label()
+
+
+func _simulation_6_shuffle_target_sectors() -> void:
+	simulation_6_target_sector_order.clear()
+	for sector_index in simulation_6_difficulty:
+		simulation_6_target_sector_order.append(sector_index)
+	simulation_6_target_sector_order.shuffle()
+
+
+func _simulation_6_reset_target(selected_target) -> void:
+	if simulation_6_target_sector_order.size() != simulation_6_difficulty:
+		_simulation_6_shuffle_target_sectors()
+	_place_target_in_curriculum_sector(
+		selected_target,
+		simulation_6_target_sector_order[target_test_index],
+		simulation_6_difficulty
+	)
+
+
 func _simulation_5_shuffle_target_sectors() -> void:
 	# At difficulty N, visit each of N angular sectors exactly once per
 	# generation. N=3 is the initial curriculum stage; N=12 is the final stage.
@@ -2524,7 +2675,14 @@ func _simulation_5_reset_target(selected_target) -> void:
 	# Called once before the initial population exists, too.
 	if simulation_5_target_sector_order.size() != simulation_5_difficulty:
 		_simulation_5_shuffle_target_sectors()
+	_place_target_in_curriculum_sector(
+		selected_target,
+		simulation_5_target_sector_order[target_test_index],
+		simulation_5_difficulty
+	)
 
+
+func _place_target_in_curriculum_sector(selected_target, sector_index: int, difficulty: int) -> void:
 	# One randomly placed target/obstacle in each sector for this generation.
 	# Radial area-uniform sampling keeps the target inside the arena,
 	# outside the same minimum-distance constraint as Simulation 4 when feasible.
@@ -2533,8 +2691,7 @@ func _simulation_5_reset_target(selected_target) -> void:
 	var maximum: Vector2 = simulation_size - minimum
 	var center: Vector2 = simulation_size * 0.5
 
-	var sector_index: int = simulation_5_target_sector_order[target_test_index]
-	var sector_width: float = TAU / float(simulation_5_difficulty)
+	var sector_width: float = TAU / float(difficulty)
 	var angle: float = (float(sector_index) + randf()) * sector_width
 	var direction: Vector2 = Vector2(cos(angle), sin(angle))
 
@@ -2749,6 +2906,21 @@ func _simulation_4_agent_info(agent_index: int) -> Dictionary:
 		main_text += "\nFirst arrival: %.2f s" % first_arrival
 	main_text += "\nFitness: %.3f" % float(fitness_behavior.call(agent_index))
 	info["main"] = main_text
+	return info
+
+
+func _simulation_6_agent_info(agent_index: int) -> Dictionary:
+	var info: Dictionary = _simulation_4_agent_info(agent_index)
+	if info.is_empty():
+		return info
+	var inputs: PackedFloat64Array = agents[agent_index].input_signals
+	if inputs.size() < 13:
+		return info
+	var directions: Array[String] = ["W", "E", "N", "S", "NW", "NE", "SW", "SE"]
+	var extra: String = ""
+	for sensor_index in 8:
+		extra += "\nInput %d (wall %s): %.2f" % [6 + sensor_index, directions[sensor_index], float(inputs[5 + sensor_index])]
+	info["main"] = str(info["main"]).replace("\nOutput 1 (move left):", extra + "\nOutput 1 (move left):")
 	return info
 
 
@@ -3203,9 +3375,13 @@ func _reset_evolution_statistics() -> void:
 	_queue_history_graph_redraw()
 	target_test_index = 0
 	simulation_5_difficulty = 3
+	simulation_6_difficulty = 3
 	if simulation_selector.selected == 4:
 		target_test_count = simulation_5_difficulty
+	elif simulation_selector.selected == 5:
+		target_test_count = simulation_6_difficulty
 	simulation_5_target_sector_order.clear()
+	simulation_6_target_sector_order.clear()
 	_update_simulation_5_num_tests_label()
 	generation_fitness_sums = PackedFloat64Array()
 	generation_mean_final_score_sum = 0.0
@@ -3246,6 +3422,7 @@ func _finish_experiment() -> void:
 
 	_capture_last_generation_best_brain(int(top_indices[0]))
 	_simulation_5_advance_difficulty_if_ready()
+	_simulation_6_advance_difficulty_if_ready()
 	_begin_offspring_generation(top_indices)
 
 
@@ -3259,7 +3436,7 @@ func _update_summary() -> void:
 	var best_fitness_agent: int = int(fitness_statistics["best_agent"])
 	var displayed_generation_real_time: float = generation_real_time_seconds
 	var simulation_4_success_text: String = ""
-	if simulation_selector.selected == 3 or simulation_selector.selected == 4:
+	if simulation_selector.selected == 3 or simulation_selector.selected == 4 or simulation_selector.selected == 5:
 		var arrival_count: int = 0
 		for agent in agents:
 			if float(agent.state.get("simulation_4_first_arrival", -1.0)) >= 0.0:
@@ -3477,6 +3654,7 @@ func _save_to_file(path: String) -> void:
 			"genetic_diversity_excluded_agent_indices": genetic_diversity_excluded_agent_indices.duplicate(),
 			"previous_generation_elite_indices": previous_generation_elite_indices.duplicate(),
 			"simulation_5_difficulty": simulation_5_difficulty,
+			"simulation_6_difficulty": simulation_6_difficulty,
 		},
 		"results": {
 			"elapsed_time_seconds": experiment_elapsed_seconds,
@@ -3574,6 +3752,10 @@ func _load_from_file(path: String) -> void:
 		# Optional for compatibility with saves created before this curriculum.
 		simulation_5_difficulty = clampi(int(evolution.get("simulation_5_difficulty", 3)), 3, SIMULATION_5_ANGULAR_SECTOR_COUNT)
 		target_test_count = simulation_5_difficulty
+		_update_simulation_5_num_tests_label()
+	elif simulation_selector.selected == 5:
+		simulation_6_difficulty = clampi(int(evolution.get("simulation_6_difficulty", 3)), 3, SIMULATION_5_ANGULAR_SECTOR_COUNT)
+		target_test_count = simulation_6_difficulty
 		_update_simulation_5_num_tests_label()
 
 	if not evolution.is_empty():

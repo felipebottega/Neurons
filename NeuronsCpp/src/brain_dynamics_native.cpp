@@ -68,6 +68,13 @@ void BrainDynamicsNative::set_brain(const Dictionary &brain) {
 	size_j = brain_size.y;
 	size_k = brain_size.z;
 	plane_size = size_i * size_j;
+	// Same V_init radii used by the GPU homeostatic selection shader.
+	// These radii are already computed during brain construction.
+	initial_search_radius_i = std::clamp(static_cast<int32_t>(brain_data["initial_search_radius_i"]), 0, size_i - 1);
+	initial_search_radius_j = std::clamp(static_cast<int32_t>(brain_data["initial_search_radius_j"]), 0, size_j - 1);
+	initial_search_radius_k = std::clamp(static_cast<int32_t>(brain_data["initial_search_radius_k"]), 0, size_k - 1);
+	max_connections = static_cast<int32_t>(brain_data["max_connections"]);
+	mean_initial_incoming = static_cast<float>(brain_data.get("mean_initial_incoming", 0.0));
 	structural_plasticity = static_cast<float>(brain_data["structural_plasticity"]);
 	structural_new_weight = structural_plasticity * 0.25f;
 	modulatory_persistence = static_cast<float>(brain_data["lambda"]);
@@ -104,7 +111,7 @@ void BrainDynamicsNative::set_brain(const Dictionary &brain) {
 		activation_thresholds[neuron_index] = is_input ? 0.0f : static_cast<float>(neuron["activation_threshold"]);
 		polarity_factors[neuron_index] = static_cast<float>(neuron["polarity_factor"]);
 		hebbian_rates[neuron_index] = static_cast<float>(neuron["hebbian_plasticity_rate"]);
-		decay_rates[neuron_index] = is_input ? 0.0f : std::exp(-12.0f / static_cast<float>(neuron["decay_factor"]));
+		decay_rates[neuron_index] = is_input ? 0.0f : std::exp(-32.0f / static_cast<float>(neuron["decay_factor"]));
 		modulatory_release_factors[neuron_index] = static_cast<float>(neuron["modulatory_release_factor"]);
 		modulatory_sensitivities[neuron_index] = static_cast<float>(neuron["modulatory_sensitivity"]);
 		modulatory_fields[neuron_index] = 0.0f;
@@ -154,6 +161,7 @@ void BrainDynamicsNative::_resize_neuron_arrays(int32_t count) {
 	firing_states.assign(count, 0);
 	activity_traces.assign(count, 0.0f);
 	incoming_signals.assign(count, 0.0f);
+	homeostatic_weight_factors.assign(count, 1.0f);
 	incoming_connection_counts.assign(count, 0);
 	modulatory_releases.assign(count, 0.0f);
 	modulatory_fields.assign(count, 0.0f);
@@ -167,7 +175,6 @@ void BrainDynamicsNative::_resize_neuron_arrays(int32_t count) {
 
 	connections.assign(count, {});
 
-	orphaned_targets.clear();
 }
 
 void BrainDynamicsNative::_cache_modulatory_neighbors() {
@@ -316,12 +323,13 @@ int64_t BrainDynamicsNative::advance(double delta_seconds) {
 
 	if (!profiling_enabled) {
 		const int32_t removed_connections = _propagate_signals();
-		_apply_neuron_state_update();
+		const int32_t scaled_connections_removed = _apply_neuron_state_update();
+		_apply_homeostatic_reconnection();
 		const int32_t added_structural = _apply_structural_plasticity();
 		added_connections_last_iteration += added_structural;
 		total_structural_plasticity_connections_formed += added_structural;
 		total_connections_formed += added_structural;
-		return removed_connections;
+		return removed_connections + scaled_connections_removed;
 	}
 
 	const int64_t total_start_us = _ticks_usec();
@@ -331,9 +339,14 @@ int64_t BrainDynamicsNative::advance(double delta_seconds) {
 	profile_propagate_us = current_us - stage_start_us;
 	stage_start_us = current_us;
 
-	_apply_neuron_state_update();
+	const int32_t scaled_connections_removed = _apply_neuron_state_update();
 	current_us = _ticks_usec();
 	profile_state_update_us = current_us - stage_start_us;
+	stage_start_us = current_us;
+
+	_apply_homeostatic_reconnection();
+	current_us = _ticks_usec();
+	profile_homeostatic_us = current_us - stage_start_us;
 	stage_start_us = current_us;
 
 	const int32_t added_structural = _apply_structural_plasticity();
@@ -344,12 +357,11 @@ int64_t BrainDynamicsNative::advance(double delta_seconds) {
 	profile_structural_plasticity_us = current_us - stage_start_us;
 	profile_total_us = current_us - total_start_us;
 
-	return removed_connections;
+	return removed_connections + scaled_connections_removed;
 }
 
 int32_t BrainDynamicsNative::_propagate_signals() {
 	int32_t removed_connections = 0;
-	int32_t replacement_connections = 0;
 	int64_t profile_stage_start_us = profiling_enabled ? _ticks_usec() : 0;
 
 	std::fill(incoming_signals.begin(), incoming_signals.end(), 0.0f);
@@ -358,7 +370,6 @@ int32_t BrainDynamicsNative::_propagate_signals() {
 	std::fill(output_signals.begin(), output_signals.end(), 0.0f);
 	std::fill(modulatory_releases.begin(), modulatory_releases.end(), 0.0f);
 	std::fill(input_signals_used.begin(), input_signals_used.end(), 0.0f);
-	orphaned_targets.clear();
 
 	for (int32_t input_index = 0; input_index < static_cast<int32_t>(input_neuron_indices.size()); ++input_index) {
 		const float input_signal = pending_input_signals[input_index];
@@ -528,9 +539,6 @@ int32_t BrainDynamicsNative::_propagate_signals() {
 					if (weight <= 0.0f) {
 						_remove_connection_at(source_index, connection_index, target_index);
 						++removed_connections;
-						if (incoming_connection_counts[target_index] == 0 && input_flags[target_index] == 0) {
-							orphaned_targets.push_back(target_index);
-						}
 					} else {
 						connection.weight = weight;
 					}
@@ -564,9 +572,6 @@ int32_t BrainDynamicsNative::_propagate_signals() {
 					if (weight <= 0.0f) {
 						_remove_connection_at(source_index, connection_index, target_index);
 						++removed_connections;
-						if (incoming_connection_counts[target_index] == 0 && input_flags[target_index] == 0) {
-							orphaned_targets.push_back(target_index);
-						}
 					} else {
 						connection.weight = weight;
 					}
@@ -583,23 +588,8 @@ int32_t BrainDynamicsNative::_propagate_signals() {
 		profile_stage_start_us = profile_now_us;
 	}
 
-	for (int32_t target_index : orphaned_targets) {
-		if (_replace_last_incoming_connection(target_index, structural_new_weight)) {
-			++replacement_connections;
-		}
-	}
-
-	if (profiling_enabled) {
-		const int64_t profile_now_us = _ticks_usec();
-		profile_homeostatic_us = profile_now_us - profile_stage_start_us;
-		profile_stage_start_us = profile_now_us;
-	}
-
-	total_connections += replacement_connections - removed_connections;
+	total_connections -= removed_connections;
 	total_connections_destroyed += removed_connections;
-	total_homeostatic_connections_formed += replacement_connections;
-	total_connections_formed += replacement_connections;
-	added_connections_last_iteration += replacement_connections;
 
 	if (profiling_enabled) {
 		profile_propagation_statistics_us = _ticks_usec() - profile_stage_start_us;
@@ -608,42 +598,71 @@ int32_t BrainDynamicsNative::_propagate_signals() {
 	return removed_connections;
 }
 
+int32_t BrainDynamicsNative::_apply_homeostatic_reconnection() {
+	// The GPU schedules selection and insertion only after the neuronal state
+	// update. Reconnect all disconnected outputs; give each disconnected
+	// internal neuron an independent 0.01% trial each iteration.
+	int32_t added = 0;
+	std::uniform_real_distribution<double> reconnect_trial(0.0, 1.0);
+	for (int32_t target_index = 0; target_index < neuron_count; ++target_index) {
+		if (input_flags[target_index] != 0 || incoming_connection_counts[target_index] != 0) continue;
+		if (internal_flags[target_index] != 0 && reconnect_trial(structural_rng) >= 0.0001) continue;
+		if (_replace_last_incoming_connection(target_index, structural_new_weight)) ++added;
+	}
+	total_connections += added;
+	total_homeostatic_connections_formed += added;
+	total_connections_formed += added;
+	added_connections_last_iteration += added;
+	return added;
+}
+
 bool BrainDynamicsNative::_replace_last_incoming_connection(int32_t target_index, float new_weight) {
-	const int32_t target_z = z_indices[target_index];
-	const int32_t source_k_min = std::max(0, target_z - 2);
-	const int32_t source_k_max = std::min(size_k - 1, target_z + 2);
+	// Restrict homeostatic reconnection to the same V_init box used by
+	// brain_population_select.glsl. The initial-search radii are genetic
+	// construction parameters, not the previous fixed five-slice search.
+	const int32_t target_spatial_index = spatial_indices[target_index];
+	const int32_t target_k = target_spatial_index / plane_size;
+	const int32_t target_j = (target_spatial_index / size_i) % size_j;
+	const int32_t target_i = target_spatial_index % size_i;
+
+	const int32_t low_i = std::max(0, target_i - initial_search_radius_i);
+	const int32_t high_i = std::min(size_i - 1, target_i + initial_search_radius_i);
+	const int32_t low_j = std::max(0, target_j - initial_search_radius_j);
+	const int32_t high_j = std::min(size_j - 1, target_j + initial_search_radius_j);
+	const int32_t low_k = std::max(0, target_k - initial_search_radius_k);
+	const int32_t high_k = std::min(size_k - 1, target_k + initial_search_radius_k);
+
 	int32_t best_source_index = -1;
 	float best_activity = -1.0f;
 	int32_t tie_count = 0;
 
-	for (int32_t source_k = source_k_min; source_k <= source_k_max; ++source_k) {
-		const int32_t slice_start = plane_size * source_k;
-		const int32_t slice_end = slice_start + plane_size;
+	// Iterate k, j, i exactly as the GPU selection shader does.
+	for (int32_t source_k = low_k; source_k <= high_k; ++source_k) {
+		for (int32_t source_j = low_j; source_j <= high_j; ++source_j) {
+			for (int32_t source_i = low_i; source_i <= high_i; ++source_i) {
+				const int32_t source_spatial_index = source_i + size_i * (source_j + size_j * source_k);
+				const int32_t source_index = neuron_index_by_spatial_index[source_spatial_index];
+				if (source_index == target_index || internal_flags[source_index] == 0) {
+					continue;
+				}
 
-		for (int32_t source_spatial_index = slice_start; source_spatial_index < slice_end; ++source_spatial_index) {
-			const int32_t source_index = neuron_index_by_spatial_index[source_spatial_index];
-
-			if (source_index == target_index || internal_flags[source_index] == 0) {
-				continue;
-			}
-
-			const float activity = activity_traces[source_index];
-
-			if (activity > best_activity) {
-				best_activity = activity;
-				best_source_index = source_index;
-				tie_count = 1;
-			} else if (activity == best_activity) {
-				++tie_count;
-				std::uniform_int_distribution<int32_t> tie_distribution(1, tie_count);
-				if (tie_distribution(structural_rng) == 1) {
+				const float activity = activity_traces[source_index];
+				if (activity > best_activity) {
+					best_activity = activity;
 					best_source_index = source_index;
+					tie_count = 1;
+				} else if (activity == best_activity) {
+					++tie_count;
+					std::uniform_int_distribution<int32_t> tie_distribution(1, tie_count);
+					if (tie_distribution(structural_rng) == 1) {
+						best_source_index = source_index;
+					}
 				}
 			}
 		}
 	}
 
-	if (best_source_index < 0) {
+	if (best_source_index < 0 || static_cast<int32_t>(connections[best_source_index].size()) >= max_connections) {
 		return false;
 	}
 
@@ -673,12 +692,23 @@ void BrainDynamicsNative::_update_modulatory_field() {
 	modulatory_fields.swap(next_modulatory_fields);
 }
 
-void BrainDynamicsNative::_apply_neuron_state_update() {
+int32_t BrainDynamicsNative::_apply_neuron_state_update() {
 	constexpr float homeostatic_low_activity = 0.05f;
 	constexpr float homeostatic_high_activity = 0.95f;
+	bool has_synaptic_scaling = false;
 
 	for (int32_t neuron_index = 0; neuron_index < neuron_count; ++neuron_index) {
-		float state = std::max(0.0f, retention_factors[neuron_index] * neuron_states[neuron_index] + incoming_signals[neuron_index]);
+		float retention = 0.0f;
+		if (input_flags[neuron_index] == 0) {
+			const float genetic = retention_factors[neuron_index];
+			const int32_t degree = std::max(0, incoming_connection_counts[neuron_index]);
+			if (degree == 0) retention = 1.0f;
+			else if (mean_initial_incoming > 0.0f)
+				retention = genetic + (1.0f - genetic) * (mean_initial_incoming / (mean_initial_incoming + static_cast<float>(degree)));
+			else retention = genetic;
+		}
+		float state = std::max(0.0f, retention * neuron_states[neuron_index] + incoming_signals[neuron_index]);
+		homeostatic_weight_factors[neuron_index] = 1.0f;
 
 		if (input_flags[neuron_index] == 0) {
 			const float activity = activity_traces[neuron_index];
@@ -686,12 +716,48 @@ void BrainDynamicsNative::_apply_neuron_state_update() {
 			if (activity < homeostatic_low_activity && state < homeostatic_low_state) {
 				state += (homeostatic_low_activity - activity) / homeostatic_low_activity * (homeostatic_low_state - state);
 			} else if (activity > homeostatic_high_activity && state > homeostatic_high_state) {
-				state -= (activity - homeostatic_high_activity) / (1.0f - homeostatic_high_activity) * (state - homeostatic_high_state);
+				const float correction = (activity - homeostatic_high_activity) / (1.0f - homeostatic_high_activity);
+				state -= correction * (state - homeostatic_high_state);
+				// The same postsynaptic correction downscales incoming weights, except input-origin synapses.
+				const float factor = std::clamp(1.0f - correction, 0.0f, 1.0f);
+				homeostatic_weight_factors[neuron_index] = factor;
+				has_synaptic_scaling |= factor < 1.0f;
 			}
 		}
 
 		neuron_states[neuron_index] = state;
 	}
+
+	if (!has_synaptic_scaling) return 0;
+
+	// Connections are stored by source. One linear pass uses each destination's
+	// already-computed homeostatic factor, avoiding an O(neurons * edges) scan.
+	// Input-origin connections are exempt, regardless of destination or polarity.
+	int32_t removed = 0;
+	for (int32_t source = 0; source < neuron_count; ++source) {
+		if (input_flags[source] != 0) continue;
+		auto &outgoing = connections[source];
+		size_t kept = 0;
+		for (size_t slot = 0; slot < outgoing.size(); ++slot) {
+			Connection &edge = outgoing[slot];
+			const float factor = homeostatic_weight_factors[edge.target_index];
+			if (factor < 1.0f) {
+				edge.weight *= factor;
+				edge.decay_residual *= factor;  // Match GPU compensated-decay bookkeeping.
+				if (edge.weight <= 0.0f) {
+					--incoming_connection_counts[edge.target_index];
+					++removed;
+					continue;
+				}
+			}
+			if (kept != slot) outgoing[kept] = edge;
+			++kept;
+		}
+		outgoing.resize(kept);
+	}
+	total_connections -= removed;
+	total_connections_destroyed += removed;
+	return removed;
 }
 
 int32_t BrainDynamicsNative::_apply_structural_plasticity() {
@@ -721,7 +787,10 @@ int32_t BrainDynamicsNative::_apply_structural_plasticity() {
 			continue;
 		}
 
-		if (activity_traces[source_index] + activity_traces[target_index] <= structural_plasticity) {
+		if (activity_traces[source_index] + activity_traces[target_index] <= structural_plasticity ||
+			std::abs(activity_traces[source_index] - activity_traces[target_index]) >= 0.01f ||
+			std::abs(normalized_signals[source_index] - normalized_signals[target_index]) >= 0.01f ||
+			static_cast<int32_t>(connections[source_index].size()) >= max_connections) {
 			continue;
 		}
 
@@ -949,6 +1018,9 @@ void BrainDynamicsNative::clear() {
 	size_j = 0;
 	size_k = 0;
 	plane_size = 0;
+	initial_search_radius_i = 0;
+	initial_search_radius_j = 0;
+	initial_search_radius_k = 0;
 	structural_plasticity = 0.0f;
 	structural_new_weight = 0.0f;
 	modulatory_persistence = 0.0f;
@@ -962,6 +1034,8 @@ void BrainDynamicsNative::clear() {
 	homeostatic_high_state = 0.0f;
 	input_gain = 1.0f;
 	input_min_weight = 0.5f;
+	mean_initial_incoming = 0.0f;
+	max_connections = 0;
 
 	input_flags.clear();
 	output_flags.clear();
@@ -982,6 +1056,7 @@ void BrainDynamicsNative::clear() {
 	firing_states.clear();
 	activity_traces.clear();
 	incoming_signals.clear();
+	homeostatic_weight_factors.clear();
 	incoming_connection_counts.clear();
 	pending_input_signals.clear();
 	output_signals.clear();
@@ -997,7 +1072,6 @@ void BrainDynamicsNative::clear() {
 	connections.clear();
 	initial_connections.clear();
 	initial_modulatory_fields.clear();
-	orphaned_targets.clear();
 	initial_structural_rng_seed = 0;
 	added_connections_last_iteration = 0;
 	total_connections_formed = 0;

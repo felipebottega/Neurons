@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://ogvwbih4gh28"
+path="res://.godot/imported/brain_packed_visual_lines.glsl-93e2e9c72a563b47999e7604a104ae07.res"
+
+[deps]
+
+source_file="res://shaders/brain_packed_visual_lines.glsl"
+dest_files=["res://.godot/imported/brain_packed_visual_lines.glsl-93e2e9c72a563b47999e7604a104ae07.res"]
+
+[params]
+

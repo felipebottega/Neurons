@@ -12,8 +12,11 @@ var math = Functions.new()
 ## [param progress_callback] optionally receives the build percentage from 0 to 100.
 ## Returns a dictionary containing the brain structure.
 func build(genome: Genome, size: Vector3i, num_inputs: int, num_outputs: int, progress_callback: Callable = Callable(), connections_density: float = 1.0) -> Dictionary:
-	if size.x < 2 or size.y < 2 or size.z < 2 or (is_nan(connections_density) or is_inf(connections_density)) or connections_density <= 0.0:
-		push_error("Brain dimensions I, J, K must all be at least 2.")
+	if size.x < 2 or size.y < 2 or size.z < 2 or num_inputs < 0 or num_outputs < 0 or num_inputs + num_outputs > size.x * size.y * size.z:
+		push_error("Invalid brain dimensions or input/output counts.")
+		return {}
+	if is_nan(connections_density) or is_inf(connections_density) or connections_density <= 0.0:
+		push_error("Connections density eta must be positive and finite.")
 		return {}
 
 	_report_progress(progress_callback, 0)
@@ -40,10 +43,13 @@ func build(genome: Genome, size: Vector3i, num_inputs: int, num_outputs: int, pr
 		"neurons": []
 	}
 
+	# All neurons are internal during provisional connection generation.
 	brain["neurons"] = _create_neurons(size, genome, progress_callback)
-	_set_input_output_neurons(brain["neurons"], size, num_inputs, num_outputs, progress_callback)
 	_create_connections(brain, genome.connections, genome.initial_search_region, progress_callback)
-	brain["valid"] = _clear_invalid_connections(brain, genome.connections, genome.input_influence, progress_callback)
+	brain["role_selection_gap"] = 0 if num_inputs + num_outputs == 0 else _prime_below(floori(float(size.x * size.y * size.z) / float(num_inputs + num_outputs)))
+	brain["role_selection_valid"] = _set_input_output_neurons(brain["neurons"], size, num_inputs, num_outputs, progress_callback)
+	var valid_connectivity: bool = _clear_invalid_connections(brain, genome.connections, genome.input_influence, progress_callback)
+	brain["valid"] = brain["role_selection_valid"] and valid_connectivity
 	_finalize_connection_weights(brain)
 	_report_progress(progress_callback, 100)
 
@@ -90,46 +96,85 @@ func _create_neurons(size: Vector3i, genome: Genome, progress_callback: Callable
 
 	return neurons
 
-## Selects the input and output neurons.
-## Neurons are sorted independently by connection energy inside each slice and then
-## interleaved by rank: the lowest-energy neuron of every slice comes first, followed
-## by the second-lowest-energy neuron of every slice, and so on.
-## [param neurons] contains the brain neurons.
-## [param size] defines the brain dimensions.
-## [param num_inputs] defines the number of input neurons.
-## [param num_outputs] defines the number of output neurons.
-## Returns nothing.
-func _set_input_output_neurons(neurons: Array, size: Vector3i, num_inputs: int, num_outputs: int, progress_callback: Callable) -> void:
-	var K = size.z
-	var neurons_per_slice = size.x * size.y
-	var slices: Array = []
-	slices.resize(K)
+## Assigns interface roles after the all-internal provisional graph exists.
+## Selection uses prime-gap linear positions and provisional degree >= 2.
+## Outputs retain channel order, while internal neurons are spatially ordered.
+static func _prime_below(value: int) -> int:
+	for candidate in range(value - 1, 1, -1):
+		var prime := true
+		var divisor := 2
+		while divisor * divisor <= candidate:
+			if candidate % divisor == 0:
+				prime = false
+				break
+			divisor += 1
+		if prime:
+			return candidate
+	return 0
 
-	for k in K:
-		slices[k] = []
+func _set_input_output_neurons(neurons: Array, size: Vector3i, num_inputs: int, num_outputs: int, progress_callback: Callable) -> bool:
+	var total: int = neurons.size()
+	var channels: int = num_inputs + num_outputs
+	var gap: int = 0 if channels == 0 else _prime_below(floori(float(total) / float(channels)))
+	if channels > 0 and gap == 0:
+		_report_progress(progress_callback, 75)
+		return false
 
+	var by_spatial: Array = []
+	by_spatial.resize(total)
+	var incoming := PackedInt32Array()
+	incoming.resize(total)
 	for neuron in neurons:
-		slices[neuron["position"].z].append(neuron)
-
-	for k in K:
-		slices[k].sort_custom(func(a, b): return a["connections_value"] < b["connections_value"])
-
-	neurons.clear()
-
-	for rank in neurons_per_slice:
-		for k in K:
-			neurons.append(slices[k][rank])
-
-	for i in num_inputs:
-		neurons[i]["input"] = true
-		neurons[i]["activation_threshold"] = 0.0
-		neurons[i]["retention_factor"] = 0.0
-		neurons[i]["polarity_factor"] = 1
-
-	for i in num_outputs:
-		neurons[-1 - i]["output"] = true
-		
-	_report_progress(progress_callback, 30)
+		var pos: Vector3i = neuron["position"]
+		var spatial: int = pos.x + size.x * (pos.y + size.y * pos.z)
+		by_spatial[spatial] = neuron
+		for connection in neuron["connections"]:
+			var target: Vector3i = connection["target"]
+			incoming[target.x + size.x * (target.y + size.y * target.z)] += 1
+	var occupied := PackedByteArray()
+	occupied.resize(total)
+	var inputs: Array[int] = []
+	var outputs: Array[int] = []
+	var valid := true
+	for channel in channels:
+		var is_input: bool = channel < num_inputs
+		var preferred: int = ((channel + 1) * gap - 1) % total
+		var chosen := -1
+		for advance in total:
+			var candidate: int = (preferred + advance) % total
+			if occupied[candidate] != 0:
+				continue
+			var degree: int = by_spatial[candidate]["connections"].size() if is_input else incoming[candidate]
+			if degree < 2:
+				continue
+			chosen = candidate
+			break
+		if chosen < 0:
+			valid = false
+			break
+		occupied[chosen] = 1
+		if is_input:
+			inputs.append(chosen)
+		else:
+			outputs.append(chosen)
+	var ordered: Array = []
+	for spatial in inputs:
+		var neuron: Dictionary = by_spatial[spatial]
+		neuron["input"] = true
+		neuron["activation_threshold"] = 0.0
+		neuron["retention_factor"] = 0.0
+		neuron["polarity_factor"] = 1
+		ordered.append(neuron)
+	for spatial in total:
+		if occupied[spatial] == 0:
+			ordered.append(by_spatial[spatial])
+	for spatial in outputs:
+		var neuron: Dictionary = by_spatial[spatial]
+		neuron["output"] = true
+		ordered.append(neuron)
+	neurons.assign(ordered)
+	_report_progress(progress_callback, 75)
+	return valid
 
 ## Creates the initial connections and their weights.
 ## Connection generation is distributed across the WorkerThreadPool, one source neuron per task element.
@@ -160,7 +205,7 @@ func _create_connections(brain: Dictionary, gene: Array, region_gene: Array, pro
 			Vector3i(brain["initial_search_radius_i"], brain["initial_search_radius_j"], brain["initial_search_radius_k"]),
 			coefficients, connection_values, offsets, results), total)
 	while not WorkerThreadPool.is_group_task_completed(task_id):
-		_report_progress(progress_callback, 30 + int(45.0 * WorkerThreadPool.get_group_processed_element_count(task_id) / total))
+		_report_progress(progress_callback, 20 + int(55.0 * WorkerThreadPool.get_group_processed_element_count(task_id) / total))
 		OS.delay_msec(10)
 	WorkerThreadPool.wait_for_group_task_completion(task_id)
 	for index in total:
@@ -171,7 +216,7 @@ func _create_connections(brain: Dictionary, gene: Array, region_gene: Array, pro
 # Same local region and signed-offset candidate-test budget as brain_connections.glsl.
 # The second pass deliberately DOES NOT rank or retry failed attempts.
 func _create_connections_for_neuron(neuron_index: int, neurons: Array, size: Vector3i, max_connections: int, radii: Vector3i, coefficients: Vector4, values: PackedFloat64Array, offsets: PackedInt32Array, results: Array) -> void:
-	if max_connections <= 0 or bool(neurons[neuron_index]["output"]):
+	if max_connections <= 0:
 		results[neuron_index] = []
 		return
 	var pos: Vector3i = neurons[neuron_index]["position"]
@@ -314,6 +359,8 @@ func _clear_invalid_connections(brain: Dictionary, gene: Array, input_influence_
 		elif incoming_count == 0:
 			isolated_internal_before += 1
 
+	# Interfaces isolated by role filtering invalidate the brain, even if later rescued.
+	brain["role_cleanup_valid"] = isolated_input_before == 0 and isolated_output_before == 0
 	brain["isolated_before_rescue"] = {
 		"internal": isolated_internal_before,
 		"output": isolated_output_before,
@@ -359,14 +406,15 @@ func _clear_invalid_connections(brain: Dictionary, gene: Array, input_influence_
 
 	# psi is fixed at generation time and uses the initial mean incoming degree of internal neurons.
 	var mean_internal_incoming = 0.0 if internal_neuron_count == 0 else float(internal_incoming_sum) / internal_neuron_count
+	brain["mean_initial_incoming"] = mean_internal_incoming
 	brain["input_gain"] = (1.0 + sin(math.G(true, true, input_influence_gene))) * mean_internal_incoming
 
-	return rescue_success and isolated_internal == 0 and isolated_output == 0 and isolated_input == 0
+	return brain["role_cleanup_valid"] and rescue_success and isolated_internal == 0 and isolated_output == 0 and isolated_input == 0
 
 
 ## Developmental rescue: direct 6-neighbor lattice, ranked by positive H^2.
 ## Receiver rescue precedes input rescue. No other initial connection is removed.
-## The temporary rescue out-degree ceiling is ceil(1.01 * N_max) + 1.
+## Rescue observes the permanent genetic out-degree ceiling N_max.
 func _rescue_isolated_neurons(brain: Dictionary, gene: Array, neuron_by_spatial_index: Array, incoming_connections: PackedInt32Array, progress_callback: Callable) -> bool:
 	var neurons: Array = brain["neurons"]
 	var size: Vector3i = brain["size"]
@@ -374,7 +422,7 @@ func _rescue_isolated_neurons(brain: Dictionary, gene: Array, neuron_by_spatial_
 	var J: int = size.y
 	var K: int = size.z
 	var IJ: int = I * J
-	var max_connections: int = mini(neurons.size() - 1, ceili(1.01 * float(brain["max_connections"])) + 1)
+	var max_connections: int = int(brain["max_connections"])
 	var coefficients: Vector4 = math.H_coefficients(gene)
 	var reasons := {"no_structural_candidate": 0, "no_positive_h_candidate": 0, "positive_h_candidates_saturated": 0, "input_source_saturated": 0}
 	var receiver_candidates: int = 0

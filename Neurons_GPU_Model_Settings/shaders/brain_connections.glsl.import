@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://cl5h5vmbd40b8"
+path="res://.godot/imported/brain_connections.glsl-6f145de8a9d451431bbbd3064f649cc5.res"
+
+[deps]
+
+source_file="res://shaders/brain_connections.glsl"
+dest_files=["res://.godot/imported/brain_connections.glsl-6f145de8a9d451431bbbd3064f649cc5.res"]
+
+[params]
+

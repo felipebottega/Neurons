@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://dppn6sivvhq68"
+path="res://.godot/imported/brain_packed_modulation.glsl-92813f6cb241e457cdbc8d93c9c1985d.res"
+
+[deps]
+
+source_file="res://shaders/brain_packed_modulation.glsl"
+dest_files=["res://.godot/imported/brain_packed_modulation.glsl-92813f6cb241e457cdbc8d93c9c1985d.res"]
+
+[params]
+

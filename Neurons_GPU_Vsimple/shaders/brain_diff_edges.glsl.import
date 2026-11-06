@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bw1uy86s38cqh"
+path="res://.godot/imported/brain_diff_edges.glsl-92f25ff13751f15c77b28f5e7ba142f8.res"
+
+[deps]
+
+source_file="res://shaders/brain_diff_edges.glsl"
+dest_files=["res://.godot/imported/brain_diff_edges.glsl-92f25ff13751f15c77b28f5e7ba142f8.res"]
+
+[params]
+

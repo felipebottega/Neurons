@@ -1,267 +1,184 @@
 # Neurons
 
-**Neurons** is an experimental artificial brain simulator built with **Godot 4**.
+**Neurons** is an experimental artificial-brain simulator built with **Godot 4**. Its research question is whether compact genomes can generate neural systems capable of lifetime adaptation and increasingly general behavior through evolution, without backpropagation or a task-specific learning algorithm.
 
-The project explores whether complex adaptive behavior can emerge from compact genetic descriptions of neural structure and dynamics. Instead of training a fixed neural network with backpropagation, each brain is generated from a genome, simulated directly, evaluated in an environment, and evolved across generations.
+A genome generates a brain; the brain controls an agent; the agent is evaluated in an environment; and evolution selects genomes for the next generation. **Evolution modifies genomes, while plasticity modifies individual brains during their lifetimes.**
 
-The long-term goal is to investigate systems that can **learn how to learn**, using biologically inspired mechanisms such as local plasticity, neuromodulation, refractory behavior, eligibility traces, and structural plasticity.
+## Theory
 
-## Overview
+### Genome
 
-A genome defines the structure and parameters of a three-dimensional artificial brain.
+Let \(\mathcal D=\{0,1,2,3\}\). A genome is an ordered tuple of genes:
 
-From that genome, Neurons generates:
+\[
+X=(x^{(1)},\ldots,x^{(n)}),\qquad x^{(r)}\in\mathcal D^{p_r}.
+\]
 
-- neuron properties
-- input and output neuron placement
-- local connectivity
-- initial synaptic weights
-- neural dynamics
-- plasticity parameters
-- modulatory dynamics
-- structural plasticity behavior
+In the current full model, \(n=16\): seven genes have 8 digits and nine have 64 digits. Thus
 
-The generated brain is simulated as a dynamical system and evaluated through behavioral tasks. Better-performing genomes are selected to produce the next generation.
+\[
+\sum_{r=1}^{16}p_r=7(8)+9(64)=632,\qquad
+|\mathcal G|=4^{632}.
+\]
 
-## Main Ideas
+A gene is **not** a list of neurons or connections. It is mapped to scalar parameters or spatial fields. Two basic mappings are
 
-### Genetically generated brains
+\[
+F_\beta(x)=\sum_{t=0}^{p-1}\sqrt{1+t}\,\beta^{x_t},
+\qquad
+G_{\delta_1,\delta_2}(x)=\sum_{t=0}^{p-1}\sin(1+t)\sin(1+x_t)^{\delta_1}\cos(1+x_t)^{\delta_2}.
+\]
 
-The complete brain is not stored directly in the genome.
+Spatial functions derived from the genes determine neuronal properties and connectivity. Genetic variation consists of crossover and digit mutations in \(\mathcal D\).
 
-Instead, the genome contains compact numerical genes interpreted as continuous spatial functions over a 3D neural volume. Small genetic changes are intended to produce correspondingly small changes in the generated brain.
+### Brain and connectivity
 
-This allows evolution to search over brain architectures without encoding every neuron or connection individually.
+The brain occupies the lattice
 
-### Three-dimensional neural space
+\[
+\mathcal N=\{0,\ldots,I-1\}\times\{0,\ldots,J-1\}\times\{0,\ldots,K-1\},
+\qquad N=IJK.
+\]
 
-Neurons occupy positions in a regular 3D mesh.
+Directed connections \(a\to b\) have weights \(w_a^b\in[0,1]\). Genetic functions determine candidate connections and their initial weights, subject to the outgoing-degree limit \(N_{\max}\).
 
-Each neuron can have genetically determined properties such as:
+Input and output roles are assigned **after provisional connectivity**. With \(m=N_{\mathrm{in}}+N_{\mathrm{out}}>0\), define
 
-- activation threshold
-- decay factor
-- retention factor
-- polarity
-- Hebbian plasticity rate
-- modulatory release
-- modulatory sensitivity
+\[
+q=\left\lfloor\frac{N}{m}\right\rfloor,\qquad
+ g=\max\{p<q:p\text{ is prime}\}.
+\]
 
-Input and output neurons are selected from the generated neural field, while the remaining neurons form the internal network.
+The preferred zero-based indices are \(rg-1\), for \(r=1,\ldots,m\). A circular search selects eligible, unassigned neurons using provisional connectivity. Invalid role-to-role connections are removed, followed by connectivity rescue. Inputs have no incoming neural connections and connect only to internal neurons; outputs receive only from internal neurons and have no outgoing neural connections.
 
-### Genetically controlled connectivity
+### Neural dynamics
 
-Connections are generated from a spatial compatibility function between source and target neurons.
+For \(s\geq0\), neural signals are normalized by
 
-A source neuron searches a local neighborhood of nearby depth slices and selects candidate targets according to the genetically defined connection function.
+\[
+\sigma(s)=1-e^{-s/\kappa},\qquad \kappa\geq1.
+\]
 
-The genome therefore controls connectivity indirectly rather than explicitly listing edges, allowing relatively compact genomes to generate large structured networks.
+Each non-input neuron has a state \(s_t\), genetically determined activation properties, a refractory mechanism, and a recent-activity trace \(R_t\in[0,1]\). An active internal neuron transmits a signal through its outgoing connections, scaled by the weight and source polarity \(\alpha\in\{-1,+1\}\). Input neurons instead receive external scalar signals and have special transmission rules.
 
-## Neural Dynamics
+The full model changes connections through four complementary processes:
 
-The simulator includes several biologically inspired mechanisms.
+- **Hebbian reinforcement:** when a connection transmits, \(w\leftarrow w+\gamma(1-w)\), with \(0\leq\gamma\leq1/2\).
+- **Endogenous modulation:** an eligibility trace \(e_t\) records recent synaptic use; a spatial modulatory field produces \(m_t\). The weight update is \(w\leftarrow w+m_te_t(1-w)\) for \(m_t\geq0\), or \(w\leftarrow w+m_te_tw\) for \(m_t<0\).
+- **Synaptic decay:** non-input connections can weaken until removed; input-origin connections are protected from ordinary decay.
+- **Structural plasticity:** connections may be removed, created, or replaced, subject to connectivity constraints.
 
-### Signal propagation
+**Homeostasis.** With \(L=0.05\), \(H=0.95\), and \(s_H=-\kappa\ln(1-H)\), the high-activity correction applies when \(R_t>H\) and \(s>s_H\). Define
 
-Neuron activity is propagated through weighted directed connections.
+\[
+\lambda_t=\frac{R_t-H}{1-H},\qquad
+s\leftarrow s-\lambda_t(s-s_H).
+\]
 
-Signals are normalized before firing decisions and transmission.
+At the same event, every **incoming connection whose source is not an input neuron** undergoes
 
-### Refractory behavior
+\[
+\boxed{w_a^b\leftarrow(1-\lambda_t(b))w_a^b.}
+\]
 
-After firing, neurons temporarily become harder to activate. This refractory state gradually decays over time.
+This synaptic downscaling is independent of excitatory/inhibitory polarity. Low-activity homeostasis corrects the neuronal state but does **not** increase synaptic weights. The input-origin exclusion preserves the special sensory connectivity rules.
 
-### Synaptic decay
+### Evolution
 
-Connection weights can decay continuously during simulation.
+For each generation:
 
-### Hebbian plasticity
+\[
+\text{genomes}\ \longrightarrow\ \text{brains}\ \longrightarrow\
+\text{agent behavior}\ \longrightarrow\ \text{fitness}\ \longrightarrow\
+\text{selection, crossover, mutation}.
+\]
 
-Connection weights can change according to local activity.
+Selected elite genomes can survive unchanged. Evaluation is task-dependent; the neural equations do not receive an explicit reward or gradient from fitness.
 
-### Eligibility traces
+## Implementations
 
-Connections maintain eligibility traces that allow delayed modulatory signals to affect previous activity.
+| Version | Brain execution | Scope |
+|---|---|---|
+| **CPU** | GDScript on CPU | Full model without a native extension. |
+| **CPP** | Native C++ via GDExtension | Full model optimized for CPU execution; also contains a GDScript path. |
+| **GPU** | GLSL compute shaders | Full model with parallel brain construction and dynamics. |
+| **GPU-Model-Settings** | GLSL compute shaders | Configurable GPU variant for controlled experiments and mechanism ablations. |
+| **GPU-Vsimple** | GLSL compute shaders | Simplified dynamics with fixed synaptic weights. |
 
-### Modulatory field
+**CPU.** Direct GDScript implementation of brain construction and neuronal dynamics. Useful as an accessible CPU reference.
 
-Neurons can release a local modulatory signal into the surrounding neural space. This field spreads through neighboring positions and influences plasticity according to each neuron's modulatory sensitivity.
+**CPP.** Native CPU implementation of the full model, integrated with Godot through GDExtension. Requires compiling the extension for the target platform.
 
-### Structural plasticity
+**GPU.** Full model implemented with compute shaders and GPU-oriented connectivity storage and update passes.
 
-Connections can be destroyed and replaced during the lifetime of the brain. The network topology can therefore change during simulation instead of remaining fixed after generation.
+**GPU-Model-Settings.** Extends GPU with pre-run controls for selected model parameters and mechanisms, including Hebbian plasticity, structural plasticity, synaptic decay, and homeostasis. The homeostasis control governs both neuronal state correction and synaptic downscaling.
 
-## Inputs and Outputs
+**GPU-Vsimple.** Uses genetically generated connectivity, prime-based input/output selection, and signal propagation, but has **fixed weights** and omits the full model's Hebbian plasticity, endogenous modulation, synaptic decay, homeostasis, and structural plasticity. It is a different mathematical model, not a full-model acceleration mode.
 
-Input neurons receive external scalar signals from the environment.
+## Simulation 6 — Obstacle Proximity Sensors
 
-The external system is responsible for mapping raw observations into values suitable for the neural inputs.
+Simulation 6 extends Simulation 4 while retaining its environment, fitness, and evolutionary curriculum. Its brain has **13 sensory inputs** and **4 motor outputs**:
 
-Possible inputs include:
+- **4 target-distance inputs:** cardinal directions, as in Simulation 4.
+- **1 binary collision input:** indicates physical contact.
+- **8 obstacle-proximity inputs:** equally spaced directions, including diagonals, covering 360°.
 
-- distance measurements
-- movement information
-- sensory channels
-- internal state variables
-- energy
-- hunger
-- arousal
-- other artificial physiological signals
+Each proximity sensor detects the nearest obstacle surface **or world boundary** along its direction, up to a range of **600 pixels**. With distance \(d\) to contact (accounting for the agent's size), its normalized signal is
 
-Output neurons expose neural signals that can control movement, actions in the environment, or internal state.
+\[
+s(d)=1-\min\left(1,\frac{d}{600}\right).
+\]
 
-Input neurons connect only to internal neurons, and output neurons receive connections only from internal neurons.
-
-## Evolution
-
-Neurons includes an evolutionary simulation system.
-
-Each generation contains a population of independently generated brains.
-
-The general cycle is:
-
-1. Generate brains from genomes.
-2. Simulate each agent.
-3. Measure fitness.
-4. Select the best-performing genomes.
-5. Generate offspring through crossover and mutation.
-6. Build a new population.
-7. Repeat.
-
-Selected elite genomes survive unchanged, while the remaining population is generated through crossover and mutation.
-
-Only genomes and compact historical statistics need to be preserved between generations. Full brains can always be reconstructed from their genomes.
+Thus \(s=0\) when no surface is within range and \(s=1\) at contact. Simulation 4 remains available unchanged for comparison.
 
 ## Analysis Tools
 
-The project includes tools for inspecting individual brains and the evolutionary process.
-
-### Brain visualization
-
-Brains can be displayed as a 3D neural graph.
-
-Available heatmaps include parameters such as:
-
-- activation threshold
-- decay factor
-- retention factor
-- Hebbian plasticity
-- polarity
-- neuron type
-- incoming connectivity
-- connection energy
-
-Individual neurons can also be selected to inspect incoming and outgoing connections.
-
-### Population statistics
-
-The simulator tracks metrics such as:
-
-- mean fitness
-- best fitness
-- genetic diversity
-- connection statistics
-- isolated neurons
-- rescue failures
-- generation time
-
-### Genetic × Fitness Landscape
-
-The simulator can visualize the relationship between selected brain phenotypes and fitness.
-
-Multiple phenotype dimensions are recorded for each generated brain, including directly generated parameters and aggregate network statistics. Two dimensions can be selected to inspect their relationship with fitness as a heatmap.
-
-## Connectivity Rescue
-
-A generated brain may contain isolated neurons.
-
-After initial connectivity is created, a rescue stage attempts to satisfy minimum connectivity requirements.
-
-The current rules require:
-
-- every internal neuron to have at least one incoming connection
-- every output neuron to have at least one incoming connection
-- every input neuron to have at least one outgoing connection
-
-Rescue connections must still satisfy the structural and genetic connectivity rules.
-
-If these conditions cannot be satisfied, the generated brain is considered invalid.
+Depending on the implementation, the project provides 3D brain visualization, neuron/connection inspection, parameter heatmaps, evolutionary fitness and diversity statistics, connectivity statistics, and a **Genetic × Fitness Landscape** view relating brain phenotypes to fitness.
 
 ## Performance
 
-The project currently uses a hybrid implementation:
-
-- **Godot / GDScript** for simulation management, UI, experiments, visualization, and evolutionary control
-- **C++ GDExtension** for performance-critical brain generation and neural dynamics
-
-Brain construction and dynamics use native data structures and multithreaded CPU code.
-
-GPU compute is a future optimization target, but the project intentionally validates the complete mathematical model on the CPU first.
-
-The long-term target is the simulation of very large neural systems, potentially reaching millions of neurons.
+Performance depends on brain dimensions, population size, connectivity, enabled mechanisms, and hardware. CPU, CPP, and GPU are distinct computational implementations; no fixed performance ratio is assumed. The long-term objective includes much larger neural populations, subject to memory and throughput constraints.
 
 ## Current Status
 
-Neurons is an active experimental project.
-
-Current areas of work include:
-
-- validating the mathematical model
-- improving evolutionary experiments
-- evaluating generalization rather than memorization
-- improving CPU performance
-- analyzing emergent neural organization
-- improving fitness landscape visualization
-- preparing the architecture for future GPU compute execution
-
-The project should currently be considered a research prototype rather than a production neural-network framework.
+Neurons is an **active research prototype**, not a production neural-network framework. Current work focuses on mathematical and numerical validation, evolutionary experiments, generalization, performance, and emergent network organization.
 
 ## Requirements
 
-- **Godot 4.7.x**
-- A C++ compiler supported by Godot GDExtension
-- A desktop system capable of running large CPU simulations
+- **Godot 4.7.x**.
+- Compatible GPU and driver for GPU variants.
+- Supported C++ compiler and GDExtension dependencies for the native **CPP** path.
+- Sufficient CPU/GPU memory for the selected simulations.
 
-The project has been developed primarily on Windows.
+Development has primarily taken place on Windows.
 
 ## Running the Project
 
-1. Clone the repository.
-2. Build the native GDExtension used by the project.
-3. Open the project in Godot.
-4. Run the desired simulation scene.
-5. Configure the brain size, population parameters, mutation rate, inputs, outputs, and simulation settings from the interface.
+1. Clone or download the desired implementation.
+2. For **CPP**, compile the native GDExtension if using its native execution path.
+3. Open the corresponding Godot project and run its simulation scene.
+4. Configure brain dimensions, input/output counts, population, mutation rate, and other exposed parameters.
+5. For **GPU-Model-Settings**, select the desired model settings before running.
 
-Performance depends strongly on brain size, connectivity, and the selected experiment.
+Controls and supported mechanisms differ between variants.
 
 ## Research Direction
 
-Neurons is not intended to reproduce conventional deep-learning architectures.
-
-The central question is:
-
 > Can a compact genome generate a neural system that develops useful internal dynamics, adapts during its lifetime, and evolves toward increasingly general behavior?
 
-The project emphasizes:
-
-- local rules
-- continuous dynamics
-- evolving structure
-- internal state
-- biologically inspired mechanisms
-- minimal task-specific logic
-
-The objective is not simply to optimize behavior on a fixed training set, but to explore neural systems capable of developing more general adaptive strategies.
+The emphasis is on local rules, continuous dynamics, evolving connectivity, internal state, and minimal task-specific learning logic. Success on a fixed fitness task alone does not establish general learning ability.
 
 ## Disclaimer
 
-This project is experimental research software.
-
-Its biological inspiration should not be interpreted as a claim of biological realism. The model deliberately simplifies many aspects of real nervous systems in order to study artificial adaptive dynamics in a computationally manageable form.
-
+This project is experimental research software. Biological inspiration does **not** imply biological realism. The model deliberately simplifies nervous systems to study artificial adaptive dynamics at manageable computational cost.
 
 ## Tips
-Command to compile GDExtension (at the root level of the Godot project): 
- - conda activate crypto
- - scons platform=windows target=template_debug api_version=4.7 (descontinued)
- - scons platform=windows target=template_release api_version=4.7
+
+To compile the **CPP** GDExtension on Windows, from the Godot project root, in the configured build environment:
+
+```bash
+conda activate myenv
+scons platform=windows target=template_release api_version=4.7
+```
+
+The previously used `template_debug` command is discontinued in this project; use a supported build configuration for the installed Godot/GDExtension version.

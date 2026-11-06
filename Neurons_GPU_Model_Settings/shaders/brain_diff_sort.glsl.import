@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://k4nfgx63ec6p"
+path="res://.godot/imported/brain_diff_sort.glsl-c1b241fc3c778a2289d027737c63625c.res"
+
+[deps]
+
+source_file="res://shaders/brain_diff_sort.glsl"
+dest_files=["res://.godot/imported/brain_diff_sort.glsl-c1b241fc3c778a2289d027737c63625c.res"]
+
+[params]
+

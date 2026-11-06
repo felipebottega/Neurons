@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://b2ppttpgugxjf"
+path="res://.godot/imported/brain_failures_hash_init.glsl-d2c191ff6f95ab994f4334505d4d457e.res"
+
+[deps]
+
+source_file="res://shaders/brain_failures_hash_init.glsl"
+dest_files=["res://.godot/imported/brain_failures_hash_init.glsl-d2c191ff6f95ab994f4334505d4d457e.res"]
+
+[params]
+

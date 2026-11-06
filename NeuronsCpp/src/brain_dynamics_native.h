@@ -78,6 +78,11 @@ private:
 	int32_t size_j = 0;
 	int32_t size_k = 0;
 	int32_t plane_size = 0;
+	int32_t initial_search_radius_i = 0;
+	int32_t initial_search_radius_j = 0;
+	int32_t initial_search_radius_k = 0;
+	int32_t max_connections = 0;
+	float mean_initial_incoming = 0.0f;
 	float structural_plasticity = 0.0f;
 	float structural_new_weight = 0.0f;
 	float modulatory_persistence = 0.0f;
@@ -114,6 +119,7 @@ private:
 	std::vector<uint8_t> firing_states;
 	std::vector<float> activity_traces;
 	std::vector<float> incoming_signals;
+	std::vector<float> homeostatic_weight_factors;
 	std::vector<int32_t> incoming_connection_counts;
 	std::vector<float> pending_input_signals;
 	std::vector<float> input_signals_used;
@@ -142,7 +148,6 @@ private:
 
 	int32_t outgoing_neuron_count = 0;
 	std::vector<int32_t> out_degree_histogram;
-	std::vector<int32_t> orphaned_targets;
 
 	std::mt19937_64 structural_rng;
 	uint64_t initial_structural_rng_seed = 0;
@@ -165,9 +170,10 @@ private:
 	void _build_runtime_connections(const Array &neurons);
 	void _store_initial_runtime_state();
 	int32_t _propagate_signals();
+	int32_t _apply_homeostatic_reconnection();
 	bool _replace_last_incoming_connection(int32_t target_index, float new_weight);
 	void _update_modulatory_field();
-	void _apply_neuron_state_update();
+	int32_t _apply_neuron_state_update();
 	int32_t _apply_structural_plasticity();
 	int32_t _random_structural_target_index(int32_t source_index);
 	void _append_connection(int32_t source_index, int32_t target_index, float weight, float eligibility);

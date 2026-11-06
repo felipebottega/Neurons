@@ -86,6 +86,10 @@ private:
 		float nu = 0.0f;
 		float mu = 0.0f;
 		float input_gain = 0.0f;
+		float mean_initial_incoming = 0.0f;
+		int32_t role_selection_gap = 0;
+		bool role_selection_valid = false;
+		bool role_cleanup_valid = false;
 		bool valid = false;
 		int64_t first_pass_connections = 0;
 		int64_t second_pass_connections = 0;
@@ -98,7 +102,7 @@ private:
 	};
 
 	void _create_neurons(NativeBrain &brain, const GenomeNative &genome, const Callable &progress_callback) const;
-	void _set_input_output_neurons(NativeBrain &brain, int32_t num_inputs, int32_t num_outputs, const Callable &progress_callback) const;
+	bool _set_input_output_neurons(NativeBrain &brain, int32_t num_inputs, int32_t num_outputs, const Callable &progress_callback) const;
 	void _create_connections(NativeBrain &brain, const std::vector<int32_t> &gene, const std::vector<int32_t> &search_gene, const Callable &progress_callback) const;
 	bool _clear_invalid_connections(NativeBrain &brain, const std::vector<int32_t> &gene, const std::vector<int32_t> &input_influence_gene, const Callable &progress_callback) const;
 	bool _rescue_isolated_neurons(NativeBrain &brain, const std::vector<int32_t> &gene, const std::vector<int32_t> &neuron_by_spatial_index, std::vector<int32_t> &incoming_connections, const Callable &progress_callback) const;

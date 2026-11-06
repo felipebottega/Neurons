@@ -37,6 +37,7 @@ var normalized_signals := PackedFloat64Array()
 var firing_states = PackedFloat64Array()
 var activity_traces = PackedFloat64Array()
 var incoming_signals := PackedFloat64Array()
+var homeostatic_weight_factors := PackedFloat64Array()
 var incoming_connection_counts = PackedInt32Array()
 var pending_input_signals := PackedFloat64Array()
 var input_signals_used = PackedFloat64Array()
@@ -128,6 +129,8 @@ func set_brain(new_brain: Dictionary) -> void:
 	activity_traces.resize(neuron_count)
 	incoming_signals = PackedFloat64Array()
 	incoming_signals.resize(neuron_count)
+	homeostatic_weight_factors = PackedFloat64Array()
+	homeostatic_weight_factors.resize(neuron_count)
 	incoming_connection_counts = PackedInt32Array()
 	incoming_connection_counts.resize(neuron_count)
 	output_slot_by_neuron_index = PackedInt32Array()
@@ -163,7 +166,7 @@ func set_brain(new_brain: Dictionary) -> void:
 		var neuron: Dictionary = neurons[neuron_index]
 		var position: Vector3i = neuron["position"]
 		neuron_index_by_spatial_index[position.x + I * position.y + IJ * position.z] = neuron_index
-		decay_rates[neuron_index] = 0.0 if neuron["input"] else exp(-12.0 / float(neuron["decay_factor"]))
+		decay_rates[neuron_index] = 0.0 if neuron["input"] else exp(-32.0 / float(neuron["decay_factor"]))
 		fatigues_used[neuron_index] = 0.0
 		effective_thresholds_used[neuron_index] = 0.0 if neuron["input"] else float(neuron["activation_threshold"])
 		modulatory_release_factors[neuron_index] = float(neuron["modulatory_release_factor"])
@@ -304,6 +307,7 @@ func reset() -> void:
 	firing_states.fill(0.0)
 	activity_traces.fill(0.0)
 	incoming_signals.fill(0.0)
+	homeostatic_weight_factors.fill(1.0)
 	pending_input_signals.fill(0.0)
 	input_signals_used.fill(0.0)
 	output_signals.fill(0.0)
@@ -337,9 +341,10 @@ func advance(delta_seconds: float) -> int:
 
 	if not profiling_enabled:
 		var removed_connections = _propagate_signals()
-		_apply_neuron_state_update()
+		var scaling_removed = _apply_neuron_state_update()
+		_apply_homeostatic_reconnection()
 		added_connections_last_iteration += _apply_structural_plasticity()
-		return removed_connections
+		return removed_connections + scaling_removed
 
 	var total_start_us: int = Time.get_ticks_usec()
 	var stage_start_us: int = total_start_us
@@ -349,9 +354,14 @@ func advance(delta_seconds: float) -> int:
 	profile_propagate_us = current_us - stage_start_us
 	stage_start_us = current_us
 
-	_apply_neuron_state_update()
+	var scaling_removed = _apply_neuron_state_update()
 	current_us = Time.get_ticks_usec()
 	profile_state_update_us = current_us - stage_start_us
+	stage_start_us = current_us
+
+	_apply_homeostatic_reconnection()
+	current_us = Time.get_ticks_usec()
+	profile_homeostatic_us = current_us - stage_start_us
 	stage_start_us = current_us
 
 	added_connections_last_iteration += _apply_structural_plasticity()
@@ -359,7 +369,7 @@ func advance(delta_seconds: float) -> int:
 	profile_structural_plasticity_us = current_us - stage_start_us
 	profile_total_us = current_us - total_start_us
 
-	return removed_connections
+	return removed_connections + scaling_removed
 
 
 ## Propagates signals synchronously through the current directional connections.
@@ -382,11 +392,9 @@ func _propagate_signals() -> int:
 	var modulatory_release_sum = 0.0
 	var recovery_factor = 0.5
 	var removed_connections = 0
-	var replacement_connections = 0
 	var weight_sum = 0.0
 	var eligibility_sum = 0.0
 	var one_minus_trace_persistence = 1.0 - trace_persistence
-	var orphaned_targets = PackedInt32Array()
 	var profile_stage_start_us: int = Time.get_ticks_usec() if profiling_enabled else 0
 
 	incoming_signals.fill(0.0)
@@ -524,8 +532,6 @@ func _propagate_signals() -> int:
 				removed_connections += 1
 				incoming_connection_counts[target_index] -= 1
 
-				if incoming_connection_counts[target_index] == 0 and not neurons[target_index]["input"]:
-					orphaned_targets.append(target_index)
 			else:
 				connection["weight"] = weight
 				weight_sum += weight
@@ -536,31 +542,12 @@ func _propagate_signals() -> int:
 		profile_connections_us = profile_now_us - profile_stage_start_us
 		profile_stage_start_us = profile_now_us
 
-	var replacement_weight = float(brain["structural_plasticity"]) * 0.25
-
-	for orphan_index in orphaned_targets.size():
-		if _replace_last_incoming_connection(orphaned_targets[orphan_index], replacement_weight):
-			replacement_connections += 1
-
-	if profiling_enabled:
-		var profile_now_us: int = Time.get_ticks_usec()
-		profile_homeostatic_us = profile_now_us - profile_stage_start_us
-		profile_stage_start_us = profile_now_us
-
-	total_connections += replacement_connections - removed_connections
-	weight_sum += replacement_weight * replacement_connections
+	total_connections -= removed_connections
 	mean_weight = 0.0 if total_connections == 0 else weight_sum / total_connections
 	mean_eligibility_trace = 0.0 if total_connections == 0 else eligibility_sum / total_connections
 
 	if removed_connections > 0:
 		total_connections_destroyed += removed_connections
-
-	if replacement_connections > 0:
-		total_connections_formed += replacement_connections
-		total_homeostatic_connections_formed += replacement_connections
-		added_connections_last_iteration += replacement_connections
-
-	if removed_connections > 0 or replacement_connections > 0:
 		_update_connection_degree_statistics()
 
 	mean_signal = 0.0 if neuron_count == 0 else signal_sum / neuron_count
@@ -572,8 +559,8 @@ func _propagate_signals() -> int:
 	return removed_connections
 
 
-## Replaces the last incoming connection of an internal or output neuron after that connection dies.
-## Candidate sources are restricted to internal neurons in the target's normal k-2 to k+2 connection region.
+## Adds an incoming connection for a currently disconnected internal or output neuron, when eligible.
+## Candidate sources are restricted to internal neurons in the target's V_init region.
 ## The source with the largest recent-activity trace R_t is selected. Exact ties are
 ## resolved uniformly at random. Returns true when a replacement connection is created.
 func _replace_last_incoming_connection(target_index: int, new_weight: float) -> bool:
@@ -585,15 +572,22 @@ func _replace_last_incoming_connection(target_index: int, new_weight: float) -> 
 	var IJ = I * J
 	var target: Dictionary = neurons[target_index]
 	var target_position: Vector3i = target["position"]
-	var source_k_min = maxi(0, target_position.z - 2)
-	var source_k_max = mini(K - 1, target_position.z + 2)
+	var radius_i: int = int(brain["initial_search_radius_i"])
+	var radius_j: int = int(brain["initial_search_radius_j"])
+	var radius_k: int = int(brain["initial_search_radius_k"])
+	var source_i_min: int = maxi(0, target_position.x - radius_i)
+	var source_i_max: int = mini(I - 1, target_position.x + radius_i)
+	var source_j_min: int = maxi(0, target_position.y - radius_j)
+	var source_j_max: int = mini(J - 1, target_position.y + radius_j)
+	var source_k_min: int = maxi(0, target_position.z - radius_k)
+	var source_k_max: int = mini(K - 1, target_position.z + radius_k)
 	var best_source_index = -1
 	var best_activity = -1.0
 	var tie_count = 0
 
 	for k in range(source_k_min, source_k_max + 1):
-		for j in J:
-			for i in I:
+		for j in range(source_j_min, source_j_max + 1):
+			for i in range(source_i_min, source_i_max + 1):
 				var spatial_index = i + I * j + IJ * k
 				var source_index = neuron_index_by_spatial_index[spatial_index]
 
@@ -619,7 +613,7 @@ func _replace_last_incoming_connection(target_index: int, new_weight: float) -> 
 					if structural_rng.randi_range(1, tie_count) == 1:
 						best_source_index = source_index
 
-	if best_source_index < 0:
+	if best_source_index < 0 or neurons[best_source_index]["connections"].size() >= int(brain["max_connections"]):
 		return false
 
 	neurons[best_source_index]["connections"].append({
@@ -673,16 +667,26 @@ func _update_modulatory_field() -> void:
 
 ## Advances every neuronal state from t to t+1 after all time-t firing and synaptic updates are complete.
 ## Incoming signals generated at t enter without being multiplied by retention until the next iteration.
-func _apply_neuron_state_update() -> void:
+func _apply_neuron_state_update() -> int:
 	const HOMEOSTATIC_LOW_ACTIVITY = 0.05
 	const HOMEOSTATIC_HIGH_ACTIVITY = 0.95
 	var neurons: Array = brain["neurons"]
+	var mean_initial: float = float(brain.get("mean_initial_incoming", 0.0))
+	var needs_scaling := false
 
 	for neuron_index in neuron_states.size():
-		var state = maxf(
-			0.0,
-			retention_factors[neuron_index] * neuron_states[neuron_index] + incoming_signals[neuron_index]
-		)
+		var retention: float = 0.0
+		if not neurons[neuron_index]["input"]:
+			var baseline: float = retention_factors[neuron_index]
+			var degree: int = maxi(0, incoming_connection_counts[neuron_index])
+			if degree == 0:
+				retention = 1.0
+			elif mean_initial > 0.0:
+				retention = baseline + (1.0 - baseline) * mean_initial / (mean_initial + degree)
+			else:
+				retention = baseline
+		var state = maxf(0.0, retention * neuron_states[neuron_index] + incoming_signals[neuron_index])
+		homeostatic_weight_factors[neuron_index] = 1.0
 
 		if not neurons[neuron_index]["input"]:
 			var activity = activity_traces[neuron_index]
@@ -690,14 +694,89 @@ func _apply_neuron_state_update() -> void:
 			if activity < HOMEOSTATIC_LOW_ACTIVITY and state < homeostatic_low_state:
 				state += (HOMEOSTATIC_LOW_ACTIVITY - activity) / HOMEOSTATIC_LOW_ACTIVITY * (homeostatic_low_state - state)
 			elif activity > HOMEOSTATIC_HIGH_ACTIVITY and state > homeostatic_high_state:
-				state -= (activity - HOMEOSTATIC_HIGH_ACTIVITY) / (1.0 - HOMEOSTATIC_HIGH_ACTIVITY) * (state - homeostatic_high_state)
+				var correction: float = (activity - HOMEOSTATIC_HIGH_ACTIVITY) / (1.0 - HOMEOSTATIC_HIGH_ACTIVITY)
+				state -= correction * (state - homeostatic_high_state)
+				# Postsynaptic downscaling uses the same factor, excluding input-origin connections.
+				var factor: float = clampf(1.0 - correction, 0.0, 1.0)
+				homeostatic_weight_factors[neuron_index] = factor
+				if factor < 1.0:
+					needs_scaling = true
 
 		neuron_states[neuron_index] = state
+
+	if not needs_scaling:
+		return 0
+
+	# The brain stores outgoing connections. This single O(edges) pass applies
+	# the factor of each connection's destination; input sources are excluded.
+	var removed := 0
+	var lost_weight := 0.0
+	var lost_eligibility := 0.0
+	var old_total: int = total_connections
+	for source in neurons:
+		if source["input"]:
+			continue
+		var connections: Array = source["connections"]
+		for connection_index in range(connections.size() - 1, -1, -1):
+			var connection: Dictionary = connections[connection_index]
+			var target_index: int = int(connection["target_index"])
+			var factor: float = homeostatic_weight_factors[target_index]
+			if factor >= 1.0:
+				continue
+			var old_weight: float = float(connection["weight"])
+			var new_weight: float = old_weight * factor
+			lost_weight += old_weight - new_weight
+			if new_weight <= 0.0:
+				lost_eligibility += float(connection["eligibility_trace"])
+				connections.remove_at(connection_index)
+				incoming_connection_counts[target_index] -= 1
+				removed += 1
+			else:
+				connection["weight"] = new_weight
+
+	# Keep GDScript's cached averages consistent with the post-scaling graph.
+	if old_total > 0:
+		var new_total: int = old_total - removed
+		mean_weight = 0.0 if new_total == 0 else (mean_weight * old_total - lost_weight) / new_total
+		mean_eligibility_trace = 0.0 if new_total == 0 else (mean_eligibility_trace * old_total - lost_eligibility) / new_total
+	if removed > 0:
+		total_connections -= removed
+		total_connections_destroyed += removed
+		_update_connection_degree_statistics()
+	return removed
 
 
 ## Attempts to create at most one new outgoing connection per firing internal neuron.
 ## A connection is created when the sum of the source and target recent-activity traces exceeds P(x).
 ## Returns the number of connections created in this iteration.
+## GPU-equivalent reconnection runs after state update, before structural plasticity.
+## Disconnected outputs are always eligible; disconnected internal neurons
+## attempt independently with probability 0.0001 on every iteration.
+func _apply_homeostatic_reconnection() -> int:
+	var neurons: Array = brain["neurons"]
+	var replacement_weight: float = float(brain["structural_plasticity"]) * 0.25
+	var added: int = 0
+	for target_index in neurons.size():
+		if neurons[target_index]["input"] or incoming_connection_counts[target_index] != 0:
+			continue
+		if not neurons[target_index]["output"] and structural_rng.randf() >= 0.0001:
+			continue
+		if _replace_last_incoming_connection(target_index, replacement_weight):
+			added += 1
+
+	if added > 0:
+		var old_total: int = total_connections
+		var new_total: int = old_total + added
+		mean_weight = (mean_weight * old_total + replacement_weight * added) / new_total
+		mean_eligibility_trace = mean_eligibility_trace * old_total / new_total
+		total_connections = new_total
+		total_connections_formed += added
+		total_homeostatic_connections_formed += added
+		added_connections_last_iteration += added
+		_update_connection_degree_statistics()
+	return added
+
+
 func _apply_structural_plasticity() -> int:
 	var neurons: Array = brain["neurons"]
 	var neuron_count = neurons.size()
@@ -739,7 +818,10 @@ func _apply_structural_plasticity() -> int:
 		if already_connected:
 			continue
 
-		if activity_traces[source_index] + activity_traces[target_index] <= plasticity:
+		if (activity_traces[source_index] + activity_traces[target_index] <= plasticity
+			or absf(activity_traces[source_index] - activity_traces[target_index]) >= 0.01
+			or absf(normalized_signals[source_index] - normalized_signals[target_index]) >= 0.01
+			or connections.size() >= int(brain["max_connections"])):
 			continue
 
 		connections.append({
@@ -763,17 +845,18 @@ func _apply_structural_plasticity() -> int:
 
 	return added_connections
 
-## Selects one random neuron uniformly from the whole brain, excluding the source.
-## The source neuron itself is skipped without retrying or allocating a candidate array.
+## Uniformly selects one target from the entire brain, excluding self.
 func _random_structural_target_index(source_index: int) -> int:
-	var n: int = brain["neurons"].size()
-	if n < 2:
+	var size: Vector3i = brain["size"]
+	var total: int = size.x * size.y * size.z
+	if total < 2:
 		return -1
-	# Uniform over all brain neurons excluding the source, as in the current model.
-	var selected: int = structural_rng.randi_range(0, n - 2)
-	if selected >= source_index:
-		selected += 1
-	return selected
+	var pos: Vector3i = brain["neurons"][source_index]["position"]
+	var source_spatial: int = pos.x + size.x * (pos.y + size.y * pos.z)
+	var target_spatial: int = structural_rng.randi_range(0, total - 2)
+	if target_spatial >= source_spatial:
+		target_spatial += 1
+	return neuron_index_by_spatial_index[target_spatial]
 
 
 ## Calculates the initial connection statistics once when a brain is associated with the runtime.
@@ -866,6 +949,7 @@ func clear() -> void:
 	firing_states = PackedFloat64Array()
 	activity_traces = PackedFloat64Array()
 	incoming_signals = PackedFloat64Array()
+	homeostatic_weight_factors = PackedFloat64Array()
 	incoming_connection_counts = PackedInt32Array()
 	pending_input_signals = PackedFloat64Array()
 	input_signals_used = PackedFloat64Array()

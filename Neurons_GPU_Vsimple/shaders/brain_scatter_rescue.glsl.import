@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://dcyld7dm5w1k0"
+path="res://.godot/imported/brain_scatter_rescue.glsl-5c5e216f566b59e627b76b37de001afb.res"
+
+[deps]
+
+source_file="res://shaders/brain_scatter_rescue.glsl"
+dest_files=["res://.godot/imported/brain_scatter_rescue.glsl-5c5e216f566b59e627b76b37de001afb.res"]
+
+[params]
+

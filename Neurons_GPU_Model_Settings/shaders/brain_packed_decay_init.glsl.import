@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bphurfi15sdqw"
+path="res://.godot/imported/brain_packed_decay_init.glsl-6e6e31cc051b189b8040a8dc21f10287.res"
+
+[deps]
+
+source_file="res://shaders/brain_packed_decay_init.glsl"
+dest_files=["res://.godot/imported/brain_packed_decay_init.glsl-6e6e31cc051b189b8040a8dc21f10287.res"]
+
+[params]
+

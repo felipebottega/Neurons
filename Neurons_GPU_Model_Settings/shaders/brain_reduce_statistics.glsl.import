@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bh3gtq3h5lddg"
+path="res://.godot/imported/brain_reduce_statistics.glsl-38acd333207cfc278f4291f58bbbc507.res"
+
+[deps]
+
+source_file="res://shaders/brain_reduce_statistics.glsl"
+dest_files=["res://.godot/imported/brain_reduce_statistics.glsl-38acd333207cfc278f4291f58bbbc507.res"]
+
+[params]
+

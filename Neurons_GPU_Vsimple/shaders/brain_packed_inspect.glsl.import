@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://blp842ja2i4pr"
+path="res://.godot/imported/brain_packed_inspect.glsl-61c2a2f8961d9c6dc12163a33a4b805d.res"
+
+[deps]
+
+source_file="res://shaders/brain_packed_inspect.glsl"
+dest_files=["res://.godot/imported/brain_packed_inspect.glsl-61c2a2f8961d9c6dc12163a33a4b805d.res"]
+
+[params]
+

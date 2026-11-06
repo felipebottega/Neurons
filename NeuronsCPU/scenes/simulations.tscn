@@ -148,11 +148,21 @@ offset_left = 1430.0
 offset_top = 359.0
 offset_right = 1498.0
 offset_bottom = 390.0
-tooltip_text = "Simulation 1 (the only GPU experiment currently implemented)."
+tooltip_text = "Simulations 1–3: 4 target-direction inputs / 4 outputs. Simulation 4: 5 inputs (four target-direction channels plus contact). Simulation 5: 5 inputs with an obstacle-sector curriculum and final-second proximity fitness. Simulation 6: 13 inputs (Simulation 4 sensors plus eight 600 px directional obstacle sensors including world boundaries), 4 outputs, and an independent curriculum. Changing simulations clears the current evaluation; genomes must have matching I/O counts."
 selected = 0
-item_count = 1
+item_count = 6
 popup/item_0/text = "1"
 popup/item_0/id = 0
+popup/item_1/text = "2"
+popup/item_1/id = 1
+popup/item_2/text = "3"
+popup/item_2/id = 2
+popup/item_3/text = "4"
+popup/item_3/id = 3
+popup/item_4/text = "5"
+popup/item_4/id = 4
+popup/item_5/text = "6"
+popup/item_5/id = 5
 
 [node name="SimulationLabel" type="Label" parent="." unique_id=1138616487]
 offset_left = 1300.0

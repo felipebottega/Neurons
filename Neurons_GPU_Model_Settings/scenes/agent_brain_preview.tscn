@@ -1,0 +1,28 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/simulations/agent_brain_preview.gd" id="1_script"]
+
+[node name="AgentBrainPreview" type="SubViewportContainer"]
+offset_left = 1271.0
+offset_top = 579.0
+offset_right = 1743.0
+offset_bottom = 873.0
+mouse_filter = 0
+mouse_force_pass_scroll_events = false
+stretch = true
+script = ExtResource("1_script")
+
+[node name="SubViewport" type="SubViewport" parent="."]
+size = Vector2i(472, 294)
+render_target_update_mode = 0
+own_world_3d = true
+
+[node name="BrainRoot" type="Node3D" parent="SubViewport"]
+
+[node name="Neurons" type="MultiMeshInstance3D" parent="SubViewport/BrainRoot"]
+
+[node name="Camera3D" type="Camera3D" parent="SubViewport/BrainRoot"]
+current = true
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="SubViewport/BrainRoot"]
+

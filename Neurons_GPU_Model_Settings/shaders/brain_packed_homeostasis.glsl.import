@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://dqjcigoeh8slr"
+path="res://.godot/imported/brain_packed_homeostasis.glsl-5a246353635e26d802aed3332ee6582d.res"
+
+[deps]
+
+source_file="res://shaders/brain_packed_homeostasis.glsl"
+dest_files=["res://.godot/imported/brain_packed_homeostasis.glsl-5a246353635e26d802aed3332ee6582d.res"]
+
+[params]
+

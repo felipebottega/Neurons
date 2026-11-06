@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://d0125bc3kgkw5"
+path="res://.godot/imported/brain_packed_edges.glsl-1f5aa59dec8e3884c4febb53d98b6ca7.res"
+
+[deps]
+
+source_file="res://shaders/brain_packed_edges.glsl"
+dest_files=["res://.godot/imported/brain_packed_edges.glsl-1f5aa59dec8e3884c4febb53d98b6ca7.res"]
+
+[params]
+

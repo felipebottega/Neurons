@@ -1,0 +1,948 @@
+extends Node2D
+
+
+const GENE_SPECS = {
+	"max_connections": 8,
+	"connections": 64,
+	"initial_search_region": 64,
+	"exponential_factor": 8,
+	"polarity_factor": 64,
+	"beta": 8,
+	"input_influence": 8,
+}
+
+const GENE_ORDER = [
+	"max_connections",
+	"connections",
+	"initial_search_region",
+	"exponential_factor",
+	"polarity_factor",
+	"beta",
+	"input_influence",
+]
+
+const GENE_FIELD_NAMES = {
+	"max_connections": "LineEdit6",
+	"connections": "LineEdit7",
+	"initial_search_region": "LineEdit21",
+	"exponential_factor": "LineEdit9",
+	"polarity_factor": "LineEdit12",
+	"beta": "LineEdit15",
+	"input_influence": "LineEdit20",
+}
+
+
+const EXTERNAL_PARAMETER_FIELD_NAMES = {
+	"size_x": "LineEdit",
+	"size_y": "LineEdit2",
+	"size_z": "LineEdit3",
+	"connections_density": "LineEdit22",
+	"num_inputs": "LineEdit4",
+	"num_outputs": "LineEdit5"
+}
+
+const BINS := 20
+
+const HISTOGRAM_PARAMETER_KEYS = [
+	"connection_weight",
+	"incoming_connections",
+	"outgoing_connections",
+	"polarity_factor",
+	"connection_energy",
+	"neuron_role",
+]
+
+const HISTOGRAM_PARAMETER_LABELS = [
+	"Connection weight",
+	"Incoming connections",
+	"Outgoing connections",
+	"Polarity factor",
+	"Connection energy",
+	"Neuron role",
+]
+
+const HEATMAP_PARAMETER_KEYS = [
+	"polarity_factor",
+	"connection_energy",
+	"neuron_role",
+	"incoming_connections",
+]
+
+const HEATMAP_PARAMETER_LABELS = [
+	"Polarity factor",
+	"Connection energy",
+	"Neuron role",
+	"Incoming connections",
+]
+
+
+var current_brain: Dictionary = {}
+var summary_label: Label
+
+var generation_thread: Thread
+var generation_progress_mutex = Mutex.new()
+var generation_progress = 0
+var displayed_generation_progress = -1
+var displayed_generation_stage = ""
+var preparing_brain = false
+var generation_start_time = 0
+var histogram_data: Dictionary = {}
+var heatmap_data: Dictionary = {}
+var heatmap_ranges: Dictionary = {}
+var save_genome_dialog: FileDialog
+var load_genome_dialog: FileDialog
+
+@onready var histogram_label: Label = $HistogramLabel
+@onready var histogram: Histogram = $Histogram
+@onready var histogram_slice_selector: OptionButton = $HistogramSliceSelector
+@onready var histogram_parameter_selector: OptionButton = $HistogramParameterSelector
+@onready var heatmap_label: Label = $HeatmapLabel
+@onready var neuron_heatmap: Heatmap = $Heatmap
+@onready var heatmap_slice_selector: OptionButton = $HeatmapSliceSelector
+@onready var heatmap_parameter_selector: OptionButton = $HeatmapParameterSelector
+
+
+func _ready() -> void:
+	# The V9 scene is retained for layout compatibility; obsolete loci are hidden.
+	for obsolete_field in ["LineEdit8", "LineEdit10", "LineEdit11", "LineEdit13", "LineEdit14", "LineEdit16", "LineEdit17", "LineEdit18", "LineEdit19", "LineEdit23"]:
+		get_node(obsolete_field).hide()
+	histogram_slice_selector.item_selected.connect(_on_histogram_selection_changed)
+	histogram_parameter_selector.item_selected.connect(_on_histogram_selection_changed)
+	heatmap_slice_selector.item_selected.connect(_on_heatmap_selection_changed)
+	heatmap_parameter_selector.item_selected.connect(_on_heatmap_selection_changed)
+	histogram_label.hide()
+	histogram_slice_selector.hide()
+	histogram_parameter_selector.hide()
+	histogram.hide()
+	heatmap_label.hide()
+	heatmap_slice_selector.hide()
+	heatmap_parameter_selector.hide()
+	neuron_heatmap.hide()
+	_setup_fields()
+	_setup_gene_randomize_buttons()
+	_setup_summary()
+	_setup_genome_file_dialogs()
+
+	$RandomizeGenome.pressed.connect(_randomize_genome)
+	$GenerateBrain.pressed.connect(_generate_brain)
+	$SaveBrain.pressed.connect(_open_save_genome_dialog)
+	$LoadBrain.pressed.connect(_open_load_genome_dialog)
+
+	_validate_form()
+
+
+## Configures the external-parameter and gene fields.
+func _setup_fields() -> void:
+	for parameter_name in EXTERNAL_PARAMETER_FIELD_NAMES:
+		var field: LineEdit = get_node(EXTERNAL_PARAMETER_FIELD_NAMES[parameter_name])
+		if parameter_name == "connections_density":
+			field.tooltip_text = "Connections density eta (> 0); 1 restores the original genetic ceiling."
+			if field.text.is_empty():
+				field.text = "1"
+			field.text_changed.connect(_on_connections_density_changed.bind(field))
+		else:
+			field.tooltip_text = field.placeholder_text
+			field.text_changed.connect(_on_external_parameter_changed.bind(field))
+
+	for gene_name in GENE_ORDER:
+		var field: LineEdit = get_node(GENE_FIELD_NAMES[gene_name])
+		var gene_size: int = GENE_SPECS[gene_name]
+		field.max_length = gene_size
+		field.tooltip_text = field.placeholder_text + " (%d digits)" % gene_size
+		field.text_changed.connect(_on_gene_changed.bind(field))
+
+## Creates one small randomization button beside each gene field.
+func _setup_gene_randomize_buttons() -> void:
+	var button_template: Button = $Button
+	button_template.hide()
+
+	for gene_name in GENE_SPECS:
+		var field: LineEdit = get_node(GENE_FIELD_NAMES[gene_name])
+		var button: Button = button_template.duplicate()
+		button.show()
+		button.position = field.position + Vector2(field.size.x + 10.0, -3.0)
+		button.tooltip_text = "Randomize " + field.placeholder_text
+		button.pressed.connect(_randomize_gene.bind(field, GENE_SPECS[gene_name]))
+		add_child(button)
+
+## Creates the preliminary brain summary area on the left side of the screen.
+func _setup_summary() -> void:
+	var title = Label.new()
+	title.position = Vector2(30, 10)
+	title.add_theme_font_size_override("font_size", 22)
+	title.text = "Brain Summary"
+	add_child(title)
+
+	summary_label = $BrainInfoLabel
+	summary_label.position = Vector2(30, 45)
+	summary_label.size = Vector2(800, 720)
+	summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	summary_label.text = "Fill the parameters and generate a brain."
+
+
+## Creates native file dialogs for saving and loading brain configuration JSON files.
+func _setup_genome_file_dialogs() -> void:
+	save_genome_dialog = FileDialog.new()
+	save_genome_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	save_genome_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	save_genome_dialog.use_native_dialog = true
+	save_genome_dialog.filters = PackedStringArray(["*.json ; JSON files"])
+	save_genome_dialog.current_file = "brain.json"
+	save_genome_dialog.file_selected.connect(_save_genome_to_file)
+	add_child(save_genome_dialog)
+
+	load_genome_dialog = FileDialog.new()
+	load_genome_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	load_genome_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	load_genome_dialog.use_native_dialog = true
+	load_genome_dialog.filters = PackedStringArray(["*.json ; JSON files"])
+	load_genome_dialog.file_selected.connect(_load_genome_from_file)
+	add_child(load_genome_dialog)
+
+
+## Opens the operating system file chooser to save the current brain configuration.
+func _open_save_genome_dialog() -> void:
+	if $SaveBrain.disabled:
+		return
+
+	save_genome_dialog.popup_centered()
+
+
+## Opens the operating system file chooser to load a brain configuration.
+func _open_load_genome_dialog() -> void:
+	if $LoadBrain.disabled:
+		return
+
+	load_genome_dialog.popup_centered()
+
+
+## Saves every field shown in the interface to a JSON file.
+## [param path] is the file selected in the save dialog.
+func _save_genome_to_file(path: String) -> void:
+	var save_path := path if path.get_extension().to_lower() == "json" else path + ".json"
+	var external_parameters := {}
+	var genome_data := {}
+
+	for parameter_name in EXTERNAL_PARAMETER_FIELD_NAMES:
+		var field: LineEdit = get_node(EXTERNAL_PARAMETER_FIELD_NAMES[parameter_name])
+		external_parameters[parameter_name] = field.text
+
+	for gene_name in GENE_ORDER:
+		var field: LineEdit = get_node(GENE_FIELD_NAMES[gene_name])
+		genome_data[gene_name] = field.text
+
+	var data := {
+		"format_version": 4,
+		"model_variant": "Vsimple",
+		"external_parameters": external_parameters,
+		"genome": genome_data
+	}
+
+	var file := FileAccess.open(save_path, FileAccess.WRITE)
+
+	if file == null:
+		summary_label.text = "Could not save brain configuration. Error: %s" % error_string(FileAccess.get_open_error())
+		return
+
+	file.store_string(JSON.stringify(data, "\t"))
+	summary_label.text = "Brain configuration saved to:\n%s" % save_path
+
+
+## Loads every field shown in the interface from a JSON file.
+## [param path] is the file selected in the open dialog.
+func _load_genome_from_file(path: String) -> void:
+	var file := FileAccess.open(path, FileAccess.READ)
+
+	if file == null:
+		summary_label.text = "Could not load brain configuration. Error: %s" % error_string(FileAccess.get_open_error())
+		return
+
+	var data = JSON.parse_string(file.get_as_text())
+
+	_migrate_legacy_initial_search_region(data)
+	_migrate_legacy_connections_density(data)
+
+	if not _is_valid_genome_file(data):
+		summary_label.text = "Invalid brain configuration file:\n%s" % path
+		return
+
+	var external_parameters: Dictionary = data["external_parameters"]
+	var genome_data: Dictionary = data["genome"]
+
+	for parameter_name in EXTERNAL_PARAMETER_FIELD_NAMES:
+		var field: LineEdit = get_node(EXTERNAL_PARAMETER_FIELD_NAMES[parameter_name])
+		field.text = external_parameters[parameter_name]
+
+	for gene_name in GENE_ORDER:
+		var field: LineEdit = get_node(GENE_FIELD_NAMES[gene_name])
+		field.text = genome_data[gene_name]
+
+	_validate_form()
+	summary_label.text = "Brain configuration loaded from:\n%s" % path
+
+
+## Converts the former saved JSON key "memory_factor" to the current "retention_factor" key.
+## This keeps previously saved brain configurations loadable after the terminology change.
+func _migrate_legacy_initial_search_region(data: Variant) -> void:
+	if not (data is Dictionary) or not data.has("genome") or not (data["genome"] is Dictionary):
+		return
+	var genes: Dictionary = data["genome"]
+	if not genes.has("initial_search_region") and genes.has("connections"):
+		genes["initial_search_region"] = genes["connections"]
+
+
+
+## Older files without a density field use the original eta = 1.
+func _migrate_legacy_connections_density(data: Variant) -> void:
+	if not (data is Dictionary) or not data.has("external_parameters") or not (data["external_parameters"] is Dictionary):
+		return
+	var external_parameters: Dictionary = data["external_parameters"]
+	if not external_parameters.has("connections_density"):
+		external_parameters["connections_density"] = "1"
+
+
+## Returns true when a parsed JSON value contains every valid interface field.
+func _is_valid_genome_file(data: Variant) -> bool:
+	if not (data is Dictionary):
+		return false
+	# Old 17-gene models are incompatible even if they contain all seven Vsimple loci.
+	if int(data.get("format_version", -1)) != 4 or str(data.get("model_variant", "")) != "Vsimple":
+		return false
+
+	if not data.has("external_parameters") or not (data["external_parameters"] is Dictionary):
+		return false
+
+	if not data.has("genome") or not (data["genome"] is Dictionary):
+		return false
+
+	var external_parameters: Dictionary = data["external_parameters"]
+	var genome_data: Dictionary = data["genome"]
+
+	for parameter_name in EXTERNAL_PARAMETER_FIELD_NAMES:
+		if not external_parameters.has(parameter_name):
+			return false
+
+		var parameter_text = external_parameters[parameter_name]
+
+		if not (parameter_text is String):
+			return false
+
+		if parameter_name == "connections_density":
+			if not _valid_connections_density(parameter_text):
+				return false
+		elif parameter_text.is_empty() or _filter_characters(parameter_text, "0123456789") != parameter_text:
+			return false
+
+	for gene_name in GENE_ORDER:
+		if not genome_data.has(gene_name):
+			return false
+
+		var gene_text = genome_data[gene_name]
+
+		if not (gene_text is String):
+			return false
+
+		if gene_text.length() != GENE_SPECS[gene_name]:
+			return false
+
+		if _filter_characters(gene_text, "0123") != gene_text:
+			return false
+
+	var size_x = int(external_parameters["size_x"])
+	var size_y = int(external_parameters["size_y"])
+	var size_z = int(external_parameters["size_z"])
+	var num_inputs = int(external_parameters["num_inputs"])
+	var num_outputs = int(external_parameters["num_outputs"])
+
+	if size_x < 2 or size_y < 2 or size_z < 2:
+		return false
+
+	if num_inputs + num_outputs > size_x * size_y * size_z:
+		return false
+
+	return true
+
+## A positive finite eta scales the ceiling; the article does not impose an upper bound.
+func _valid_connections_density(value: String) -> bool:
+	if not value.is_valid_float():
+		return false
+	var eta := float(value)
+	return not is_nan(eta) and not is_inf(eta) and eta > 0.0
+
+
+## Allows decimals for eta rather than using the integer-only external fields handler.
+func _on_connections_density_changed(new_text: String, field: LineEdit) -> void:
+	var filtered := _filter_characters(new_text, "0123456789.")
+	if filtered != new_text:
+		var caret := field.caret_column
+		field.text = filtered
+		field.caret_column = mini(caret, filtered.length())
+	_validate_form()
+
+
+## Keeps external parameters restricted to non-negative integers.
+func _on_external_parameter_changed(new_text: String, field: LineEdit) -> void:
+	var filtered = _filter_characters(new_text, "0123456789")
+
+	if filtered != new_text:
+		var caret = field.caret_column
+		field.text = filtered
+		field.caret_column = mini(caret, filtered.length())
+
+	_validate_form()
+
+## Keeps gene fields restricted to the alphabet {0, 1, 2, 3}.
+func _on_gene_changed(new_text: String, field: LineEdit) -> void:
+	var filtered = _filter_characters(new_text, "0123")
+
+	if filtered != new_text:
+		var caret = field.caret_column
+		field.text = filtered
+		field.caret_column = mini(caret, filtered.length())
+
+	_validate_form()
+
+## Returns only characters contained in allowed_characters.
+func _filter_characters(text: String, allowed_characters: String) -> String:
+	var filtered = ""
+
+	for character in text:
+		if allowed_characters.contains(character):
+			filtered += character
+
+	return filtered
+
+## Randomizes all genetic parameters without changing external parameters.
+func _randomize_genome() -> void:
+	for gene_name in GENE_SPECS:
+		var field: LineEdit = get_node(GENE_FIELD_NAMES[gene_name])
+		field.text = _random_gene_text(GENE_SPECS[gene_name])
+
+	_validate_form()
+
+## Randomizes a single gene field.
+func _randomize_gene(field: LineEdit, gene_size: int) -> void:
+	field.text = _random_gene_text(gene_size)
+	_validate_form()
+
+## Generates a random gene string with digits in {0, 1, 2, 3}.
+func _random_gene_text(gene_size: int) -> String:
+	var gene = ""
+
+	for _i in gene_size:
+		gene += str(randi_range(0, 3))
+
+	return gene
+
+## Validates all fields and enables brain generation only for a valid configuration.
+func _validate_form() -> void:
+	var valid = true
+
+	for parameter_name in EXTERNAL_PARAMETER_FIELD_NAMES:
+		var field: LineEdit = get_node(EXTERNAL_PARAMETER_FIELD_NAMES[parameter_name])
+		if field.text.is_empty():
+			valid = false
+
+	for gene_name in GENE_SPECS:
+		var field: LineEdit = get_node(GENE_FIELD_NAMES[gene_name])
+		if field.text.length() != GENE_SPECS[gene_name]:
+			valid = false
+
+	if valid:
+		var size = Vector3i(
+			int($LineEdit.text),
+			int($LineEdit2.text),
+			int($LineEdit3.text)
+		)
+		var num_inputs = int($LineEdit4.text)
+		var num_outputs = int($LineEdit5.text)
+
+		if size.x < 2 or size.y < 2 or size.z < 2:
+			valid = false
+		elif num_inputs + num_outputs > size.x * size.y * size.z:
+			valid = false
+		elif not _valid_connections_density($LineEdit22.text):
+			valid = false
+
+	var generating := _is_generating()
+	$GenerateBrain.disabled = not valid or generating
+	$SaveBrain.disabled = not valid or generating
+	$LoadBrain.disabled = generating
+
+## Builds a plain genome dictionary; the GPU project has no GDExtension classes.
+func _genome_from_fields() -> Dictionary:
+	var genome_data: Dictionary = {}
+	for gene_name in GENE_ORDER:
+		var field: LineEdit = get_node(GENE_FIELD_NAMES[gene_name])
+		genome_data[gene_name] = _gene_from_text(field.text)
+	return genome_data
+
+
+## Converts a gene string into the GPU builder's integer-array representation.
+func _gene_from_text(text: String) -> Array[int]:
+	var gene: Array[int] = []
+
+	for character in text:
+		gene.append(int(character))
+
+	return gene
+
+## Generates the brain corresponding exactly to the current fields in a worker thread.
+func _generate_brain() -> void:
+	if $GenerateBrain.disabled or _is_generating():
+		return
+
+	var size = Vector3i(int($LineEdit.text), int($LineEdit2.text), int($LineEdit3.text))
+	var num_inputs = int($LineEdit4.text)
+	var num_outputs = int($LineEdit5.text)
+	var connections_density := float($LineEdit22.text)
+	var genome: Dictionary = _genome_from_fields()
+	if genome.is_empty():
+		summary_label.text = "Could not read the genome from the supplied fields."
+		return
+
+	generation_progress_mutex.lock()
+	generation_progress = 0
+	generation_progress_mutex.unlock()
+	displayed_generation_progress = -1
+	displayed_generation_stage = ""
+	preparing_brain = false
+	generation_start_time = Time.get_ticks_msec()
+
+	summary_label.modulate = Color.WHITE
+	summary_label.text = "Creating neurons... 0%"
+	$GenerateBrain.disabled = true
+
+	generation_thread = Thread.new()
+	var error = generation_thread.start(_build_brain_thread.bind(genome, size, num_inputs, num_outputs, connections_density))
+	_validate_form()
+
+	if error != OK:
+		generation_thread = null
+		summary_label.text = "Could not start brain-generation thread. Error: %s" % error_string(error)
+		_validate_form()
+
+
+## Worker-thread entry point. It must not access the scene tree or UI nodes.
+func _build_brain_thread(genome: Dictionary, size: Vector3i, num_inputs: int, num_outputs: int, connections_density: float) -> Dictionary:
+	var builder := BrainBuilderGPU.new()
+	var result := builder.build(genome, size, num_inputs, num_outputs, _set_generation_progress_from_thread, false, null, connections_density, BrainBuilderGPU.STATS_WEIGHT_HISTOGRAM)
+	return result
+
+
+## Called by BrainBuilder from the worker thread. Only shared progress state is touched here.
+func _set_generation_progress_from_thread(percent: int) -> void:
+	generation_progress_mutex.lock()
+	generation_progress = percent
+	generation_progress_mutex.unlock()
+
+
+## Updates the progress on the main thread. The GPU builder reports 0..100;
+## the Explorer reserves the final 6% for statistics, histograms, and heatmaps.
+func _process(_delta: float) -> void:
+	if generation_thread == null:
+		return
+
+	generation_progress_mutex.lock()
+	var builder_progress: int = generation_progress
+	generation_progress_mutex.unlock()
+
+	var progress: int = int(94.0 * builder_progress / 100.0)
+	var stage := _gpu_generation_stage(builder_progress)
+	if progress != displayed_generation_progress or stage != displayed_generation_stage:
+		_set_generation_status(progress, stage)
+
+	if not generation_thread.is_alive():
+		current_brain = generation_thread.wait_to_finish()
+		generation_thread = null
+		var elapsed_seconds = (Time.get_ticks_msec() - generation_start_time) / 1000.0
+
+		if current_brain.is_empty():
+			_update_generation_failure(elapsed_seconds)
+			_validate_form()
+			return
+
+		preparing_brain = true
+		call_deferred("_finish_brain_generation", elapsed_seconds)
+
+
+## Phase names correspond to the GPU phenotype-building stages.
+func _gpu_generation_stage(builder_progress: int) -> String:
+	if builder_progress >= 91:
+		return "Reducing GPU connection statistics"
+	if builder_progress >= 83:
+		return "Finalizing synaptic weights on GPU"
+	if builder_progress >= 75:
+		return "Validating and rescuing connections"
+	if builder_progress >= 21:
+		return "Generating connections on GPU"
+	if builder_progress >= 16:
+		return "Assigning input and output neurons"
+	return "Generating neuronal fields on GPU"
+
+
+func _set_generation_status(percent: int, stage: String) -> void:
+	displayed_generation_progress = percent
+	displayed_generation_stage = stage
+	summary_label.text = "%s... %d%%" % [stage, percent]
+
+
+## Stage the expensive Explorer passes across separate frames. 100% is only
+## reached once GPU generation and the three UI datasets are ready.
+func _finish_brain_generation(build_seconds: float) -> void:
+	_set_generation_status(95, "Calculating brain statistics")
+	await get_tree().process_frame
+	var phase_start_us: int = Time.get_ticks_usec()
+	_update_summary(current_brain, build_seconds)
+	print("[GPU Explorer] Summary: %.3f ms" % (float(Time.get_ticks_usec() - phase_start_us) / 1000.0))
+	var finished_summary: String = summary_label.text
+	var finished_color: Color = summary_label.modulate
+
+	_set_generation_status(97, "Preparing histograms")
+	await get_tree().process_frame
+	phase_start_us = Time.get_ticks_usec()
+	_setup_histogram(current_brain)
+	print("[GPU Explorer] Histograms: %.3f ms" % (float(Time.get_ticks_usec() - phase_start_us) / 1000.0))
+
+	_set_generation_status(99, "Preparing heatmaps")
+	await get_tree().process_frame
+	phase_start_us = Time.get_ticks_usec()
+	_setup_heatmap(current_brain)
+	print("[GPU Explorer] Heatmaps: %.3f ms" % (float(Time.get_ticks_usec() - phase_start_us) / 1000.0))
+
+	# 'Build time' includes GPU construction and readback; show total UI time too.
+	var total_seconds = (Time.get_ticks_msec() - generation_start_time) / 1000.0
+	displayed_generation_progress = 100
+	displayed_generation_stage = "Complete"
+	summary_label.modulate = finished_color
+	summary_label.text = "Brain ready (100%)\n\n" + finished_summary + "\nTotal preparation time: %.3f s" % total_seconds
+	preparing_brain = false
+	_validate_form()
+
+
+## Returns true while construction or Explorer data preparation is in progress.
+func _is_generating() -> bool:
+	return preparing_brain or (generation_thread != null and generation_thread.is_started())
+
+
+## Displays the result of a failed brain generation.
+func _update_generation_failure(elapsed_seconds: float) -> void:
+	summary_label.modulate = Color(1.0, 0.35, 0.1)
+	summary_label.text = "Brain construction could not complete.\nCheck the Godot debugger for GPU/shader errors.\nGeneration time: %.3f s" % elapsed_seconds
+	histogram_label.hide()
+	histogram_slice_selector.hide()
+	histogram_parameter_selector.hide()
+	histogram.hide()
+	heatmap_label.hide()
+	heatmap_slice_selector.hide()
+	heatmap_parameter_selector.hide()
+	neuron_heatmap.hide()
+
+## Displays statistics without materializing connection Dictionaries.
+## All degree and weight aggregates were computed from packed arrays in the builder.
+func _update_summary(brain: Dictionary, elapsed_seconds: float) -> void:
+	var neurons: Array = brain["neurons"]
+	var total_neurons: int = neurons.size()
+	var total_connections: int = brain["connection_total"]
+	var out_degrees: PackedInt32Array = brain["outgoing_counts"]
+	var I: int = brain["size"].x
+	var J: int = brain["size"].y
+	var excitatory := 0
+	var inhibitory := 0
+	var connection_energy_sum := 0.0
+
+	if brain.get("valid", true):
+		summary_label.modulate = Color.WHITE
+	else:
+		summary_label.modulate = Color(1.0, 0.35, 0.1)
+
+	var min_out_degree := 0
+	var max_out_degree := 0
+	var outgoing_neuron_count := 0
+	var outgoing_connection_count := 0
+	var first_outgoing_neuron := true
+
+	for neuron in neurons:
+		var pos: Vector3i = neuron["position"]
+		var spatial: int = pos.x + I * (pos.y + J * pos.z)
+		var out_degree: int = out_degrees[spatial]
+		connection_energy_sum += neuron["connections_value"]
+		if neuron["polarity_factor"] > 0:
+			excitatory += 1
+		else:
+			inhibitory += 1
+		if neuron["output"]:
+			continue
+		outgoing_neuron_count += 1
+		outgoing_connection_count += out_degree
+		if first_outgoing_neuron:
+			min_out_degree = out_degree
+			max_out_degree = out_degree
+			first_outgoing_neuron = false
+		else:
+			min_out_degree = mini(min_out_degree, out_degree)
+			max_out_degree = maxi(max_out_degree, out_degree)
+
+	var mean_connections: int = 0 if outgoing_neuron_count == 0 else int(float(outgoing_connection_count) / outgoing_neuron_count)
+	var mean_weight: float = 0.0 if total_connections == 0 else float(brain["connection_weight_sum"]) / float(total_connections)
+	var neuron_denominator: int = maxi(1, total_neurons)
+	var isolated: Dictionary = brain.get("isolated_before_rescue", {})
+	var rescue_input: int = int(isolated.get("input", 0))
+	var rescue_internal: int = int(isolated.get("internal", 0))
+	var rescue_output: int = int(isolated.get("output", 0))
+	var rescue_evaluations: int = int(brain.get("rescue_candidates_total", 0))
+	var status_text := ""
+	if not brain.get("valid", true):
+		status_text = "Brain generation failed.\nIsolated neurons.\n\n"
+
+	summary_label.text = (
+		status_text
+		+ "Dimensions: %d x %d x %d\n" % [brain["size"].x, brain["size"].y, brain["size"].z]
+		+ "Beta: %.6f\n" % brain["beta"]
+		+ "Connections density eta: %.6f\n" % brain["connections_density"]
+		+ "Neurons: %d\n" % total_neurons
+		+ "Maximum connections per neuron: %d\n" % brain["max_connections"]
+		+ "Input influence psi: %.6f\n" % brain.get("input_gain", 0.0)
+		+ "Existing directional connections: %d\n" % total_connections
+		+ "Initial connections (1st/2nd pass): %d / %d\n" % [int(brain["initial_local_connections"]), int(brain["initial_additional_connections"])]
+		+ "Mean outgoing connections: %d\n" % mean_connections
+		+ "Outgoing degree range: %d - %d\n" % [min_out_degree, max_out_degree]
+		+ "Isolated before rescue (input/internal/output): %d / %d / %d\n" % [rescue_input, rescue_internal, rescue_output]
+		+ "Rescue candidates evaluated (H): %d\n" % rescue_evaluations
+		+ "Excitatory neurons: %d (%.2f%%)\n" % [excitatory, 100.0 * excitatory / neuron_denominator]
+		+ "Inhibitory neurons: %d (%.2f%%)\n\n" % [inhibitory, 100.0 * inhibitory / neuron_denominator]
+		+ "Mean connection energy: %.6f\n" % (connection_energy_sum / neuron_denominator)
+		+ "Mean connection weight: %.6f\n\n" % mean_weight
+		+ "Exponential factor: %.6f\n" % brain["exponential_factor"]
+		+ "Build time: %.3f s" % elapsed_seconds
+	)
+
+## Builds histogram data for every supported parameter, both globally and per brain slice.
+## [param brain] contains the brain structure and neuron properties.
+## Returns nothing.
+func _build_histogram_data(brain: Dictionary) -> void:
+	var neurons: Array = brain["neurons"]
+	var I: int = brain["size"].x
+	var J: int = brain["size"].y
+	var K: int = brain["size"].z
+	var incoming: PackedInt32Array = brain["incoming_counts"]
+	var degrees: PackedInt32Array = brain["outgoing_counts"]
+	var weight_slices: Array = brain["connection_weight_bins"]
+	var incoming_max_degree := 1
+	var outgoing_max_degree := 1
+	for spatial in incoming.size():
+		incoming_max_degree = maxi(incoming_max_degree, incoming[spatial])
+		outgoing_max_degree = maxi(outgoing_max_degree, degrees[spatial])
+
+	histogram_data.clear()
+	for parameter_key in HISTOGRAM_PARAMETER_KEYS:
+		var value_range := _histogram_range(parameter_key, incoming_max_degree, outgoing_max_degree)
+		var slices: Array = []
+		slices.resize(K)
+		for k in K:
+			var bins := PackedInt32Array()
+			bins.resize(BINS)
+			slices[k] = bins
+		var all_bins := PackedInt32Array()
+		all_bins.resize(BINS)
+		histogram_data[parameter_key] = {
+			"slices": slices,
+			"all": all_bins,
+			"range": value_range,
+			"integer_range": parameter_key in ["incoming_connections", "outgoing_connections"]
+		}
+
+	# The packed builder already computed the weight distribution in one pass.
+	var weight_all: PackedInt32Array = histogram_data["connection_weight"]["all"]
+	for slice_bins in weight_slices:
+		var bins: PackedInt32Array = slice_bins
+		for i in BINS:
+			weight_all[i] += bins[i]
+	histogram_data["connection_weight"]["slices"] = weight_slices
+	histogram_data["connection_weight"]["all"] = weight_all
+
+	for neuron in neurons:
+		var pos: Vector3i = neuron["position"]
+		var spatial: int = pos.x + I * (pos.y + J * pos.z)
+		var k: int = pos.z
+		_add_histogram_value("incoming_connections", incoming[spatial], k)
+		_add_histogram_value("outgoing_connections", degrees[spatial], k)
+		_add_histogram_value("polarity_factor", neuron["polarity_factor"], k)
+		_add_histogram_value("connection_energy", neuron["connections_value"], k)
+		var role := 0.0
+		if neuron["input"]:
+			role = -1.0
+		elif neuron["output"]:
+			role = 1.0
+		_add_histogram_value("neuron_role", role, k)
+
+
+## Returns the common x-axis range used by a histogram parameter across all slices.
+func _histogram_range(parameter_key: String, incoming_max_degree: int, outgoing_max_degree: int) -> Vector2:
+	match parameter_key:
+		"connection_weight":
+			return Vector2(0.0, 1.0)
+		"polarity_factor", "connection_energy", "neuron_role":
+			return Vector2(-1.0, 1.0)
+		"incoming_connections":
+			return Vector2(0.0, incoming_max_degree)
+		"outgoing_connections":
+			return Vector2(0.0, outgoing_max_degree)
+	return Vector2(0.0, 1.0)
+
+
+func _add_histogram_value(parameter_key: String, value: float, k: int) -> void:
+	var parameter_data: Dictionary = histogram_data[parameter_key]
+	var value_range: Vector2 = parameter_data["range"]
+	var normalized := 0.0
+
+	if value_range.y > value_range.x:
+		normalized = (value - value_range.x) / (value_range.y - value_range.x)
+
+	var bin := clampi(int(normalized * BINS), 0, BINS - 1)
+	parameter_data["slices"][k][bin] += 1
+	parameter_data["all"][bin] += 1
+
+
+## Prepares the shared histogram and its slice and parameter selectors.
+func _setup_histogram(brain: Dictionary) -> void:
+	_build_histogram_data(brain)
+
+	histogram_slice_selector.clear()
+	histogram_slice_selector.add_item("All slices")
+
+	for k in brain["size"].z:
+		histogram_slice_selector.add_item("k = %d" % k)
+
+	histogram_parameter_selector.clear()
+	for label in HISTOGRAM_PARAMETER_LABELS:
+		histogram_parameter_selector.add_item(label)
+
+	histogram_slice_selector.select(0)
+	histogram_parameter_selector.select(0)
+	_update_histogram()
+
+	histogram_label.show()
+	histogram_slice_selector.show()
+	histogram_parameter_selector.show()
+	histogram.show()
+
+
+## Updates the histogram using the currently selected slice and parameter.
+func _update_histogram() -> void:
+	if current_brain.is_empty():
+		return
+
+	var parameter_index: int = histogram_parameter_selector.selected
+	var slice_index: int = histogram_slice_selector.selected
+
+	if parameter_index < 0 or slice_index < 0:
+		return
+
+	var parameter_key: String = HISTOGRAM_PARAMETER_KEYS[parameter_index]
+	var parameter_data: Dictionary = histogram_data[parameter_key]
+	var value_range: Vector2 = parameter_data["range"]
+
+	histogram_label.text = "%s Distribution" % HISTOGRAM_PARAMETER_LABELS[parameter_index]
+	histogram.set_x_range(value_range.x, value_range.y, parameter_data["integer_range"])
+
+	if slice_index == 0:
+		histogram.set_bins(parameter_data["all"])
+	else:
+		histogram.set_bins(parameter_data["slices"][slice_index - 1])
+
+
+## Builds spatial scalar fields used by the neuron heatmap.
+## [param brain] contains the brain structure and neuron properties.
+## Returns nothing.
+func _build_heatmap_data(brain: Dictionary) -> void:
+	var I: int = brain["size"].x
+	var J: int = brain["size"].y
+	var K: int = brain["size"].z
+	var total: int = I * J * K
+	var polarity := PackedFloat64Array()
+	var connection_energy := PackedFloat64Array()
+	var neuron_roles := PackedFloat64Array()
+	var incoming := PackedFloat64Array()
+	polarity.resize(total)
+	connection_energy.resize(total)
+	neuron_roles.resize(total)
+	incoming.resize(total)
+	var incoming_counts: PackedInt32Array = brain["incoming_counts"]
+	var incoming_min: float = INF
+	var incoming_max: float = -INF
+	for neuron in brain["neurons"]:
+		var pos: Vector3i = neuron["position"]
+		var at: int = pos.x + I * (pos.y + J * pos.z)
+		polarity[at] = float(neuron["polarity_factor"])
+		connection_energy[at] = float(neuron["connections_value"])
+		neuron_roles[at] = -1.0 if neuron["input"] else (1.0 if neuron["output"] else 0.0)
+		incoming[at] = float(incoming_counts[at])
+		incoming_min = minf(incoming_min, incoming[at])
+		incoming_max = maxf(incoming_max, incoming[at])
+	heatmap_data = {
+		"polarity_factor": polarity,
+		"connection_energy": connection_energy,
+		"neuron_role": neuron_roles,
+		"incoming_connections": incoming
+	}
+	heatmap_ranges = {
+		"polarity_factor": Vector2(-1.0, 1.0),
+		"connection_energy": Vector2(-1.0, 1.0),
+		"neuron_role": Vector2(-1.0, 1.0),
+		"incoming_connections": Vector2(incoming_min, incoming_max)
+	}
+
+
+func _setup_heatmap(brain: Dictionary) -> void:
+	_build_heatmap_data(brain)
+
+	heatmap_slice_selector.clear()
+	for k in brain["size"].z:
+		heatmap_slice_selector.add_item("k = %d" % k)
+
+	heatmap_parameter_selector.clear()
+	for label in HEATMAP_PARAMETER_LABELS:
+		heatmap_parameter_selector.add_item(label)
+
+	heatmap_slice_selector.select(0)
+	heatmap_parameter_selector.select(0)
+	_update_heatmap()
+
+	heatmap_label.show()
+	heatmap_slice_selector.show()
+	heatmap_parameter_selector.show()
+	neuron_heatmap.show()
+
+
+## Updates the heatmap using the currently selected slice and neuron parameter.
+func _update_heatmap() -> void:
+	if current_brain.is_empty():
+		return
+
+	var parameter_index: int = heatmap_parameter_selector.selected
+	var k: int = heatmap_slice_selector.selected
+
+	if parameter_index < 0 or k < 0:
+		return
+
+	var parameter_key: String = HEATMAP_PARAMETER_KEYS[parameter_index]
+	var I: int = current_brain["size"].x
+	var J: int = current_brain["size"].y
+	var slice_size: int = I * J
+	var slice_start: int = k * slice_size
+	var all_values: PackedFloat64Array = heatmap_data[parameter_key]
+	var slice_values: PackedFloat64Array = all_values.slice(slice_start, slice_start + slice_size)
+	var value_range: Vector2 = heatmap_ranges[parameter_key]
+
+	heatmap_label.text = "%s Heatmap" % HEATMAP_PARAMETER_LABELS[parameter_index]
+	neuron_heatmap.set_data(slice_values, Vector2i(I, J), value_range.x, value_range.y)
+
+## Updates the histogram when either selector changes.
+func _on_histogram_selection_changed(_index: int) -> void:
+	_update_histogram()
+
+## Updates the neuron heatmap when either selector changes.
+func _on_heatmap_selection_changed(_index: int) -> void:
+	_update_heatmap()
+	

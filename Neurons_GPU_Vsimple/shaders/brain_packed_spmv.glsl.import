@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bu18hlkfxuncv"
+path="res://.godot/imported/brain_packed_spmv.glsl-7ca3a40172bfdd935a541413544c1a7e.res"
+
+[deps]
+
+source_file="res://shaders/brain_packed_spmv.glsl"
+dest_files=["res://.godot/imported/brain_packed_spmv.glsl-7ca3a40172bfdd935a541413544c1a7e.res"]
+
+[params]
+

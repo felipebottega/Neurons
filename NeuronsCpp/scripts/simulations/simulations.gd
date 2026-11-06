@@ -3,6 +3,7 @@ extends Node2D
 
 const AgentClass = preload("res://scripts/simulations/agent.gd")
 const TargetClass = preload("res://scripts/simulations/target.gd")
+const MazeGeneratorClass = preload("res://scripts/simulations/maze_generator.gd")
 const BRAIN_PREVIEW_SCENE: PackedScene = preload("res://scenes/agent_brain_preview.tscn")
 
 
@@ -29,9 +30,25 @@ const RUNTIME_UI_UPDATE_INTERVAL_US: int = 16667  # 60 Hz maximum for the simula
 const NON_SIMULATION_UI_UPDATE_INTERVAL_US: int = 250000  # 4 Hz maximum for labels and other UI.
 const SIMULATION_4_COLLISION_EPSILON: float = 0.001
 const SIMULATION_4_TOUCH_TOLERANCE: float = 0.05
-const SIMULATION_5_ANGULAR_SECTOR_COUNT: int = 12
-const SIMULATION_5_DIFFICULTY_BASE_THRESHOLD: float = 0.7
-const SIMULATION_5_DIFFICULTY_THRESHOLD_STEP: float = 0.02
+const SIMULATION_4_ANGULAR_SECTOR_COUNT: int = 12
+const SIMULATION_4_DIFFICULTY_BASE_THRESHOLD: float = 0.7
+const SIMULATION_4_DIFFICULTY_THRESHOLD_STEP: float = 0.02
+const SIMULATION_5_MAX_DIFFICULTY: int = 10
+const SIMULATION_5_ADVANCE_THRESHOLD: float = 0.8
+const SIMULATION_5_NUM_TESTS: int = 3
+const SIMULATION_5_WALL_THICKNESS: float = 18.0
+const SIMULATION_5_SENSOR_RANGE: float = 220.0
+# Simulation 6 shares Simulation 4's environment, collision solver, fitness and
+# curriculum, but senses obstacles in eight fixed world-space directions.
+# A ray measures distance from the agent center to the first collision surface
+# (inflated obstacle or arena boundary). 0 = out of range; 1 = contact.
+const SIMULATION_6_SENSOR_RANGE: float = 600.0
+const SIMULATION_6_DIAGONAL_COMPONENT: float = 0.7071067811865476
+const SIMULATION_6_SENSOR_DIRECTIONS = [
+	Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN,
+	Vector2(-SIMULATION_6_DIAGONAL_COMPONENT, -SIMULATION_6_DIAGONAL_COMPONENT), Vector2(SIMULATION_6_DIAGONAL_COMPONENT, -SIMULATION_6_DIAGONAL_COMPONENT),
+	Vector2(-SIMULATION_6_DIAGONAL_COMPONENT, SIMULATION_6_DIAGONAL_COMPONENT), Vector2(SIMULATION_6_DIAGONAL_COMPONENT, SIMULATION_6_DIAGONAL_COMPONENT),
+]
 
 const BRAIN_EXPLORER_GENE_ORDER = [
 	"max_connections",
@@ -133,8 +150,6 @@ const HEATMAP_PHENOTYPE_INDEX = {
 @export_range(5.0, 80.0, 1.0) var simulation_4_obstacle_thickness: float = 24.0
 @export_range(0.0, 0.4, 0.01) var simulation_4_obstacle_size_variation: float = 0.12
 
-@export_group("Simulation 4: Evolution")
-@export_range(0.0, 0.3, 0.01) var simulation_4_progress_weight: float = 0.10
 
 var brain_profiling: bool = false
 var applied_brain_profiling: bool = false
@@ -151,6 +166,9 @@ var profiling_print_interval_steps: int = 300
 @export var evolution_graph_border_color: Color = Color(0.55, 0.75, 0.70, 1.0)
 @export var evolution_graph_mean_color: Color = Color(0.25, 0.85, 1.0, 1.0)
 @export var evolution_graph_best_color: Color = Color(1.0, 0.82, 0.2, 1.0)
+@export var simulation_agent_color: Color = Color.WHITE
+@export var simulation_elite_agent_color: Color = Color(1.0, 0.18, 0.18, 1.0)
+@export var genetic_diversity_elite_color: Color = Color(1.0, 0.65, 0.3, 1.0)
 
 
 @onready var dimension_i_field: LineEdit = $LineEdit
@@ -161,6 +179,7 @@ var profiling_print_interval_steps: int = 300
 @onready var mutation_probability_field: LineEdit = $LineEdit5
 @onready var start_button: Button = $Start
 @onready var pause_button: Button = $Pause
+@onready var single_elite_button: Button = $Pause2
 @onready var save_button: Button = $Save
 @onready var load_button: Button = $Load
 @onready var save_brain_button: Button = $SaveBrain
@@ -171,9 +190,11 @@ var profiling_print_interval_steps: int = 300
 @onready var show_brain_button: Button = $ShowBrain
 @onready var summary_label: Label = $Summary
 @onready var simulation_space: Node2D = $SimulationSpace
-@onready var simulation_5_num_tests_label: Label = $SimulationSpace/NumTestsLabel
+@onready var simulation_4_num_tests_label: Label = $SimulationSpace/NumTestsLabel
 @onready var speed_selector: OptionButton = $Speed
 @onready var simulation_selector: OptionButton = $SimulationSelect
+var active_simulation_index: int = 0
+var simulation_change_dialog: AcceptDialog
 @onready var evolution_graph_selector: OptionButton = $OptionButton
 @onready var genetic_diversity_graph_selector: OptionButton = $OptionButton2
 @onready var heatmap: Heatmap = $Heatmap
@@ -236,8 +257,11 @@ var fitness_integrals: PackedFloat64Array = PackedFloat64Array()
 var simulation_4_obstacle_center: Vector2 = Vector2.ZERO
 var simulation_4_obstacle_size: Vector2 = Vector2.ZERO
 var simulation_4_obstacle_angle: float = 0.0
-var simulation_5_target_sector_order: Array[int] = []
-var simulation_5_difficulty: int = 3
+var simulation_4_target_sector_order: Array[int] = []
+var simulation_4_difficulty: int = 3
+var simulation_5_difficulty: int = 1
+var simulation_6_difficulty: int = 3
+var simulation_5_maze = MazeGeneratorClass.new()
 
 var free_mode_active: bool = false
 var target_dragging: bool = false
@@ -267,11 +291,15 @@ var evolution_best_agent_fitness_generation: int = 0
 var evolution_mean_fitness_history: PackedFloat64Array = PackedFloat64Array()
 var evolution_best_fitness_history: PackedFloat64Array = PackedFloat64Array()
 var genetic_diversity_history: PackedFloat64Array = PackedFloat64Array()
+var elite_genetic_diversity_history: PackedFloat64Array = PackedFloat64Array()
+var current_elite_turnover_count: int = 0
+var previous_generation_elite_signatures: Array[String] = []
 var evolution_graph_mean_points_cache: PackedVector2Array = PackedVector2Array()
 var evolution_graph_best_points_cache: PackedVector2Array = PackedVector2Array()
 var evolution_graph_minimum_value_cache: float = 0.0
 var evolution_graph_maximum_value_cache: float = 1.0
 var genetic_diversity_graph_points_cache: PackedVector2Array = PackedVector2Array()
+var elite_genetic_diversity_graph_points_cache: PackedVector2Array = PackedVector2Array()
 var genetic_diversity_minimum_exponent_cache: int = -1
 var genetic_diversity_excluded_agent_indices: Array[int] = []
 var previous_generation_elite_indices: Array[int] = []
@@ -334,6 +362,10 @@ func _ready() -> void:
 	elite_button.button_pressed = false
 	elite_button.text = "OFF"
 	elite_button.toggled.connect(_on_elite_toggled)
+	single_elite_button.toggle_mode = true
+	single_elite_button.set_pressed_no_signal(false)
+	single_elite_button.toggled.connect(_on_single_elite_toggled)
+	_update_single_elite_button()
 	show_brain_button.toggle_mode = true
 	show_brain_button.button_pressed = false
 	show_brain_button.text = "OFF"
@@ -350,6 +382,10 @@ func _ready() -> void:
 	_setup_speed_selector()
 	speed_selector.item_selected.connect(_on_speed_selected)
 	simulation_selector.item_selected.connect(_on_simulation_selected)
+	active_simulation_index = simulation_selector.selected
+	simulation_change_dialog = AcceptDialog.new()
+	simulation_change_dialog.title = "Incompatible simulation"
+	add_child(simulation_change_dialog)
 	_setup_evolution_graph_selector()
 	evolution_graph_selector.item_selected.connect(_on_evolution_graph_selected)
 	_setup_genetic_diversity_graph_selector()
@@ -768,32 +804,97 @@ func _update_phenotypic_fitness_heatmap() -> void:
 
 
 func _on_simulation_selected(index: int) -> void:
-	if generation_thread != null:
+	if index == active_simulation_index:
 		return
 
-	if (
-		experiment_state == ExperimentState.GENERATING
-		or experiment_state == ExperimentState.RUNNING
-		or experiment_state == ExperimentState.PAUSED
-		or experiment_state == ExperimentState.OFFSPRING
-	):
+	# Validate against the population actually being evolved, not merely the
+	# previous dropdown value. Native generation also has a fixed I/O
+	# layout, even before the first finished genome is available.
+	var required_inputs: int = 13 if index == 5 else (8 if index == 4 else (5 if index == 3 else 4))
+	var required_outputs: int = 4
+	var has_existing_population: bool = (
+		_simulation_is_active()
+		or population_genomes.size() == agent_count
+		or population_brains.size() == agent_count
+	)
+	var population_inputs: int = num_inputs
+	var population_outputs: int = num_outputs
+	if population_from_load and population_genomes.size() == agent_count:
+		population_inputs = loaded_population_num_inputs
+		population_outputs = loaded_population_num_outputs
+		# A loaded population may already be incompatible with the selected
+		# simulation, but it can still be transferred to a compatible one.
+		has_existing_population = true
+
+	if has_existing_population and (population_inputs != required_inputs or population_outputs != required_outputs):
+		simulation_selector.select(active_simulation_index)
+		simulation_change_dialog.dialog_text = (
+			"Cannot switch to simulation %d with the current population.\n\n" % (index + 1)
+			+ "Population: %d inputs / %d outputs\n" % [population_inputs, population_outputs]
+			+ "Simulation %d: %d inputs / %d outputs\n\n" % [index + 1, required_inputs, required_outputs]
+			+ "The current simulation and population are unchanged."
+		)
+		simulation_change_dialog.popup_centered()
 		return
 
+	var was_running: bool = experiment_state == ExperimentState.RUNNING
+	var was_paused: bool = experiment_state == ExperimentState.PAUSED
+	var is_generating: bool = generation_thread != null or experiment_state == ExperimentState.GENERATING or experiment_state == ExperimentState.OFFSPRING
+	var previous_generation_number: int = generation_number
+	var previous_elites: Array[int] = previous_generation_elite_indices.duplicate()
+	var previous_excluded: Array[int] = genetic_diversity_excluded_agent_indices.duplicate()
+
+	active_simulation_index = index
 	_setup_simulation(index)
-	_clear_runtime_state()
+	# Fitness from different environments is not directly comparable. Keep the
+	# evolved genomes and global generation number, but start fresh statistics
+	# and phenotype/fitness correlations for the new task.
 	_reset_evolution_statistics()
+	generation_number = previous_generation_number
+	previous_generation_elite_indices = previous_elites
+	genetic_diversity_excluded_agent_indices = previous_excluded
 
-	if population_from_load:
-		if loaded_population_num_inputs == num_inputs and loaded_population_num_outputs == num_outputs:
-			summary_label.text = "Loaded population ready for the selected simulation. Evolution history reset."
-		else:
-			summary_label.text = (
-				"Loaded population preserved, but incompatible with the selected simulation.\n"
-				+ "Population: %d inputs / %d outputs\n" % [loaded_population_num_inputs, loaded_population_num_outputs]
-				+ "Simulation: %d inputs / %d outputs" % [num_inputs, num_outputs]
-			)
+	if was_running or was_paused:
+		# Discard the unfinished test (without recording or selecting from its
+		# fitness), and re-evaluate the SAME genetic population under the new
+		# task. The existing native brains are reset, not regenerated.
+		target_test_index = 0
+		generation_fitness_sums.resize(agent_count)
+		generation_fitness_sums.fill(0.0)
+		generation_mean_final_score_sum = 0.0
+		generation_best_final_score = -1.0
+		generation_real_start_us = Time.get_ticks_usec()
+		if index == 2:
+			simulation_3_target_speed = agent_speed * 0.5
+		if index == 3 or index == 5:
+			_simulation_4_shuffle_target_sectors()
+		if heatmap_tracking_enabled:
+			_capture_generation_heatmap_phenotypes()
+		_start_experiment_from_population(false)
+		if was_paused and experiment_state == ExperimentState.RUNNING:
+			experiment_state = ExperimentState.PAUSED
+			pause_button.text = "Continue"
+			_update_summary()
+			_refresh_buttons()
+	elif is_generating:
+		# The native generation worker has captured the same channel counts. Its
+		# output will start in the newly selected simulation when ready.
+		summary_label.text = "Simulation %d selected. The next evaluation will use this task." % (index + 1)
 	else:
-		summary_label.text = "Ready."
+		# Inactive populations loaded from disk are retained as genotypes;
+		# released native phenotypes can be rebuilt on the next Start.
+		if population_genomes.size() == agent_count:
+			if not population_from_load:
+				population_from_load = true
+				loaded_population_size = current_brain_size
+				loaded_population_density = connections_density
+				loaded_population_num_inputs = population_inputs
+				loaded_population_num_outputs = population_outputs
+			_clear_runtime_state()
+			population_brains.clear()
+			summary_label.text = "Compatible genomes preserved. Press Start to evolve in simulation %d." % (index + 1)
+		else:
+			summary_label.text = "Ready."
 
 	_refresh_buttons()
 	queue_redraw()
@@ -811,10 +912,14 @@ func _setup_simulation(index: int) -> void:
 			_setup_simulation_4()
 		4:
 			_setup_simulation_5()
+		5:
+			_setup_simulation_6()
 		_:
 			simulation_selector.select(0)
 			_setup_simulation_1()
-	_update_simulation_5_num_tests_label()
+	# Smaller font keeps all 13 inputs legible in the existing info panel.
+	agent_info_label.add_theme_font_size_override("font_size", 12 if index == 5 else 14)
+	_update_simulation_4_num_tests_label()
 
 
 func _setup_simulation_1() -> void:
@@ -874,6 +979,7 @@ func _setup_simulation_2() -> void:
 func _setup_simulation_3() -> void:
 	num_inputs = 4
 	num_outputs = 4
+	simulation_3_target_speed = agent_speed * 0.5
 	target_test_count = 3
 	target_position_change_interval_seconds = 0.0
 	evaluation_behavior = Callable(self, "_simulation_1_evaluate_agent")
@@ -899,11 +1005,12 @@ func _setup_simulation_3() -> void:
 
 
 func _setup_simulation_4() -> void:
-	# Four goal-direction inputs, one binary touch input and four motor outputs.
-	# Fitness measures progress and actual arrival, not proximity over time.
+	# Obstacle avoidance with 5 sensory inputs and a sector-based curriculum.
+	# Three target tests initially, progressing up to 12 tests.
+	# Fitness continues to use only proximity during the final second.
 	num_inputs = 5
 	num_outputs = 4
-	target_test_count = 3
+	target_test_count = simulation_4_difficulty
 	target_position_change_interval_seconds = 0.0
 	evaluation_behavior = Callable(self, "_simulation_4_evaluate_agent")
 	fitness_reset_behavior = Callable(self, "_simulation_1_reset_fitness")
@@ -928,18 +1035,46 @@ func _setup_simulation_4() -> void:
 
 
 func _setup_simulation_5() -> void:
-	# Same agents, inputs, outputs and obstacles as Simulation 4.
-	# Curriculum: three tests initially, progressing up to 12 tests.
-	# Fitness continues to use only proximity during the final second.
-	num_inputs = 5
+	# Four target displacement channels plus four local wall-distance sensors.
+	# Unlike Simulation 4 (5 inputs), the maze task requires 8 inputs.
+	# A single random layout is shared by all agents in each test.
+	num_inputs = 8
 	num_outputs = 4
-	target_test_count = simulation_5_difficulty
+	target_test_count = SIMULATION_5_NUM_TESTS
 	target_position_change_interval_seconds = 0.0
 	evaluation_behavior = Callable(self, "_simulation_5_evaluate_agent")
 	fitness_reset_behavior = Callable(self, "_simulation_1_reset_fitness")
 	fitness_accumulation_behavior = Callable(self, "_simulation_5_accumulate_fitness")
 	fitness_behavior = Callable(self, "_simulation_5_fitness")
-	agent_info_behavior = Callable(self, "_simulation_4_agent_info")
+	agent_info_behavior = Callable(self, "_simulation_5_agent_info")
+
+	agents.clear()
+	for _agent_index in agent_count:
+		agents.append(AgentClass.new(
+			num_inputs, num_outputs,
+			Callable(self, "_simulation_5_reset_agent"),
+			Callable(self, "_simulation_5_update_agent_inputs"),
+			Callable(self, "_simulation_5_apply_agent_outputs")
+		))
+	target = TargetClass.new(
+		Callable(self, "_simulation_5_reset_target"),
+		Callable(self, "_simulation_1_update_target")
+	)
+
+
+func _setup_simulation_6() -> void:
+	# Exact Simulation 4 experiment, with eight additional obstacle sensors.
+	# Inputs 1-4 = target displacement, 5 = binary contact,
+	# 6-13 = W, E, N, S, NW, NE, SW, SE obstacle proximity.
+	num_inputs = 13
+	num_outputs = 4
+	target_test_count = simulation_6_difficulty
+	target_position_change_interval_seconds = 0.0
+	evaluation_behavior = Callable(self, "_simulation_4_evaluate_agent")
+	fitness_reset_behavior = Callable(self, "_simulation_1_reset_fitness")
+	fitness_accumulation_behavior = Callable(self, "_simulation_4_accumulate_fitness")
+	fitness_behavior = Callable(self, "_simulation_4_fitness")
+	agent_info_behavior = Callable(self, "_simulation_6_agent_info")
 
 	agents.clear()
 	for _agent_index in agent_count:
@@ -947,12 +1082,11 @@ func _setup_simulation_5() -> void:
 			num_inputs,
 			num_outputs,
 			Callable(self, "_simulation_4_reset_agent"),
-			Callable(self, "_simulation_4_update_agent_inputs"),
+			Callable(self, "_simulation_6_update_agent_inputs"),
 			Callable(self, "_simulation_4_apply_agent_outputs")
 		))
-
 	target = TargetClass.new(
-		Callable(self, "_simulation_5_reset_target"),
+		Callable(self, "_simulation_4_reset_target"),
 		Callable(self, "_simulation_1_update_target")
 	)
 
@@ -1144,6 +1278,10 @@ func _on_elite_toggled(enabled: bool) -> void:
 	queue_redraw()
 
 
+# The preview never advances a second brain. It observes one agent in the
+# population's existing native states. OFF performs no snapshots or 3D updates.
+
+
 func _on_show_brain_toggled(enabled: bool) -> void:
 	show_brain_button.text = "ON" if enabled else "OFF"
 	agent_info_label.visible = not enabled
@@ -1219,8 +1357,20 @@ func _draw() -> void:
 	if target == null:
 		return
 
-	if simulation_selector.selected == 3 or simulation_selector.selected == 4:
+	if simulation_selector.selected == 3 or simulation_selector.selected == 5:
 		_draw_simulation_4_obstacle(origin)
+	elif simulation_selector.selected == 4:
+		for wall in simulation_5_maze.walls:
+			var world_rect: Rect2 = Rect2(origin + wall.position, wall.size)
+			draw_rect(world_rect, simulation_4_obstacle_color, true)
+			draw_rect(world_rect, simulation_4_obstacle_border_color, false, 2.0)
+		# Show the unique corridor solution in red for visual inspection only.
+		# Neither this path nor the fitness distance field enters neural inputs.
+		if simulation_5_maze.solution_path.size() >= 2:
+			var route_points := PackedVector2Array()
+			for waypoint in simulation_5_maze.solution_path:
+				route_points.append(origin + waypoint)
+			draw_polyline(route_points, Color(1.0, 0.12, 0.12, 0.95), 3.0, true)
 
 	var target_size = Vector2(target_square_size, target_square_size)
 	var target_rect = Rect2(origin + target.position - target_size * 0.5, target_size)
@@ -1235,10 +1385,10 @@ func _draw() -> void:
 			continue
 		var agent_position: Vector2 = agent.state["position"]
 		var agent_rect = Rect2(origin + agent_position - agent_size * 0.5, agent_size)
-		draw_rect(agent_rect, Color.WHITE, true)
+		var agent_color: Color = simulation_elite_agent_color if agent_index in previous_generation_elite_indices else simulation_agent_color
+		draw_rect(agent_rect, agent_color, true)
 		if agent_index == selected_agent_index:
 			draw_rect(agent_rect.grow(2.0), Color.YELLOW, false, 2.0)
-
 
 
 func _draw_history_graphs(drawer: Node2D) -> void:
@@ -1324,7 +1474,7 @@ func _draw_genetic_diversity_graph(drawer: Node2D, simulation_origin: Vector2) -
 	drawer.draw_line(plot_origin, plot_origin + Vector2(0.0, plot_size.y), evolution_graph_border_color, 1.0)
 	drawer.draw_line(plot_origin + Vector2(0.0, plot_size.y), plot_origin + plot_size, evolution_graph_border_color, 1.0)
 
-	if genetic_diversity_graph_points_cache.is_empty():
+	if genetic_diversity_graph_points_cache.is_empty() and elite_genetic_diversity_graph_points_cache.is_empty():
 		return
 
 	var log_range: float = -float(genetic_diversity_minimum_exponent_cache)
@@ -1340,11 +1490,23 @@ func _draw_genetic_diversity_graph(drawer: Node2D, simulation_origin: Vector2) -
 
 	if genetic_diversity_graph_points_cache.size() == 1:
 		drawer.draw_circle(genetic_diversity_graph_points_cache[0], 2.5, evolution_graph_mean_color)
-	else:
+	elif genetic_diversity_graph_points_cache.size() > 1:
 		drawer.draw_polyline(genetic_diversity_graph_points_cache, evolution_graph_mean_color, 2.0, true)
 
-	drawer.draw_string(default_font, graph_origin + Vector2(6.0, 14.0), "Genetic diversity (normalized Hamming distance, log scale)", HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, Color.WHITE)
+	if elite_genetic_diversity_graph_points_cache.size() == 1:
+		drawer.draw_circle(elite_genetic_diversity_graph_points_cache[0], 2.5, genetic_diversity_elite_color)
+	elif elite_genetic_diversity_graph_points_cache.size() > 1:
+		drawer.draw_polyline(elite_genetic_diversity_graph_points_cache, genetic_diversity_elite_color, 2.0, true)
+
+	var turnover_suffix: String = "(%+d)" % current_elite_turnover_count if current_elite_turnover_count > 0 else "(0)"
+	drawer.draw_string(default_font, graph_origin + Vector2(6.0, 14.0), "Genetic diversity (normalized Hamming distance, log scale) %s" % turnover_suffix, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, Color.WHITE)
 	drawer.draw_string(default_font, graph_origin + Vector2(margin_left, evolution_graph_size.y - 6.0), "Generation", HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, Color.WHITE)
+	var legend_x: float = graph_origin.x + evolution_graph_size.x - 154.0
+	var legend_y: float = graph_origin.y + 14.0
+	drawer.draw_line(Vector2(legend_x, legend_y - 5.0), Vector2(legend_x + 20.0, legend_y - 5.0), evolution_graph_mean_color, 2.0)
+	drawer.draw_string(default_font, Vector2(legend_x + 26.0, legend_y), "Mean", HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, Color.WHITE)
+	drawer.draw_line(Vector2(legend_x + 77.0, legend_y - 5.0), Vector2(legend_x + 97.0, legend_y - 5.0), genetic_diversity_elite_color, 2.0)
+	drawer.draw_string(default_font, Vector2(legend_x + 103.0, legend_y), "Best", HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, Color.WHITE)
 
 
 func _rebuild_history_graph_caches() -> void:
@@ -1409,21 +1571,30 @@ func _rebuild_evolution_graph_cache() -> void:
 
 func _rebuild_genetic_diversity_graph_cache() -> void:
 	genetic_diversity_graph_points_cache = PackedVector2Array()
+	elite_genetic_diversity_graph_points_cache = PackedVector2Array()
 
 	if genetic_diversity_history.is_empty() or not is_instance_valid(simulation_space):
 		return
 
 	var diversity_history: PackedFloat64Array = genetic_diversity_history
+	var elite_history: PackedFloat64Array = elite_genetic_diversity_history
 	match genetic_diversity_graph_selector.selected:
 		1:
 			diversity_history = _moving_average(genetic_diversity_history, 10)
+			elite_history = _moving_average_available(elite_genetic_diversity_history, 10)
 		2:
 			diversity_history = _moving_average(genetic_diversity_history, 50)
+			elite_history = _moving_average_available(elite_genetic_diversity_history, 50)
 
+	# Both series share the same logarithmic axis. Missing elite history in
+	# legacy saves is marked -1 (not a fabricated zero).
 	var minimum_positive: float = 1.0
 	for value in diversity_history:
 		if value > 0.0:
-			minimum_positive = min(minimum_positive, value)
+			minimum_positive = minf(minimum_positive, value)
+	for value in elite_history:
+		if value > 0.0:
+			minimum_positive = minf(minimum_positive, value)
 
 	genetic_diversity_minimum_exponent_cache = int(floor(log(minimum_positive) / log(10.0)))
 	genetic_diversity_minimum_exponent_cache = min(genetic_diversity_minimum_exponent_cache, -1)
@@ -1444,10 +1615,17 @@ func _rebuild_genetic_diversity_graph_cache() -> void:
 
 	for index in point_count:
 		var x: float = plot_origin.x if point_count == 1 else plot_origin.x + plot_size.x * float(index) / float(point_count - 1)
-		var value: float = max(diversity_history[index], minimum_log_value)
+		var value: float = maxf(diversity_history[index], minimum_log_value)
 		var log_value: float = log(value) / log(10.0)
 		var y: float = plot_origin.y + plot_size.y * (-log_value) / log_range
 		genetic_diversity_graph_points_cache[index] = Vector2(x, y)
+
+		if index < elite_history.size() and elite_history[index] >= 0.0:
+			var elite_value: float = maxf(elite_history[index], minimum_log_value)
+			var elite_log_value: float = log(elite_value) / log(10.0)
+			var elite_y: float = plot_origin.y + plot_size.y * (-elite_log_value) / log_range
+			elite_genetic_diversity_graph_points_cache.append(Vector2(x, elite_y))
+
 
 func _flatten_genome(genome: Dictionary) -> PackedByteArray:
 	var flattened: PackedByteArray = PackedByteArray()
@@ -1464,34 +1642,8 @@ func _population_genetic_diversity() -> float:
 	for agent_index in population_genomes.size():
 		if agent_index not in genetic_diversity_excluded_agent_indices:
 			included_agent_indices.append(agent_index)
+	return _mean_genetic_diversity_for_indices(included_agent_indices)
 
-	if included_agent_indices.size() < 2:
-		return 0.0
-
-	var flattened_genomes: Array = []
-	flattened_genomes.resize(included_agent_indices.size())
-
-	for included_index in included_agent_indices.size():
-		flattened_genomes[included_index] = _flatten_genome(population_genomes[included_agent_indices[included_index]])
-
-	var genome_length: int = flattened_genomes[0].size()
-	var total_normalized_distance: float = 0.0
-	var pair_count: int = 0
-
-	for first_index in flattened_genomes.size() - 1:
-		var first_genome: PackedByteArray = flattened_genomes[first_index]
-		for second_index in range(first_index + 1, flattened_genomes.size()):
-			var second_genome: PackedByteArray = flattened_genomes[second_index]
-			var hamming_distance: int = 0
-
-			for gene_index in genome_length:
-				if first_genome[gene_index] != second_genome[gene_index]:
-					hamming_distance += 1
-
-			total_normalized_distance += float(hamming_distance) / float(genome_length)
-			pair_count += 1
-
-	return total_normalized_distance / float(pair_count)
 
 func _moving_average(values: PackedFloat64Array, window_size: int) -> PackedFloat64Array:
 	var averaged_values: PackedFloat64Array = PackedFloat64Array()
@@ -1609,7 +1761,7 @@ func _input(event: InputEvent) -> void:
 		var mouse_position: Vector2 = simulation_space.to_local(get_global_mouse_position())
 
 		if event.pressed:
-			if free_mode_active:
+			if free_mode_active and simulation_selector.selected != 4:
 				var half_target_size: float = target_square_size * 0.5
 				var target_rect = Rect2(
 					target.position - Vector2(half_target_size, half_target_size),
@@ -1626,7 +1778,7 @@ func _input(event: InputEvent) -> void:
 		else:
 			target_dragging = false
 
-	elif event is InputEventMouseMotion and free_mode_active and target_dragging:
+	elif event is InputEventMouseMotion and free_mode_active and target_dragging and simulation_selector.selected != 4:
 		var half_target_size: float = target_square_size * 0.5
 		var mouse_position: Vector2 = simulation_space.to_local(get_global_mouse_position())
 		var dragged_position: Vector2 = mouse_position - target_drag_offset
@@ -1634,7 +1786,7 @@ func _input(event: InputEvent) -> void:
 			clampf(dragged_position.x, half_target_size, simulation_size.x - half_target_size),
 			clampf(dragged_position.y, half_target_size, simulation_size.y - half_target_size)
 		)
-		if simulation_selector.selected == 3 or simulation_selector.selected == 4:
+		if simulation_selector.selected == 3 or simulation_selector.selected == 5:
 			_simulation_4_update_obstacle(false)
 		queue_redraw()
 		get_viewport().set_input_as_handled()
@@ -1642,10 +1794,14 @@ func _input(event: InputEvent) -> void:
 
 func _mouse_is_over_interactive_control() -> bool:
 	var hovered_control: Control = get_viewport().gui_get_hovered_control()
-	if hovered_control is BaseButton or hovered_control is LineEdit or hovered_control is SpinBox:
+	if hovered_control is BaseButton or hovered_control is LineEdit:
 		return true
-	return (show_brain_button.button_pressed and agent_brain_preview != null
-		and agent_brain_preview.get_global_rect().has_point(get_viewport().get_mouse_position()))
+	# Clicking the preview is not a request to deselect the simulated agent.
+	return (
+		show_brain_button.button_pressed
+		and agent_brain_preview != null
+		and agent_brain_preview.get_global_rect().has_point(get_viewport().get_mouse_position())
+	)
 
 
 func _select_agent_at(mouse_position: Vector2) -> void:
@@ -1847,6 +2003,9 @@ func _generate_population_thread(size: Vector3i, maximum_attempts: int, selected
 
 
 func _begin_offspring_generation(top_indices: Array[int]) -> void:
+	var elite_signatures: Array[String] = _elite_signatures_from_indices(top_indices)
+	current_elite_turnover_count = _elite_turnover_count(previous_generation_elite_signatures, elite_signatures)
+	previous_generation_elite_signatures = elite_signatures
 	previous_generation_elite_indices = top_indices.duplicate()
 	if elite_button.button_pressed and selected_agent_index not in previous_generation_elite_indices:
 		selected_agent_index = -1
@@ -1879,7 +2038,8 @@ func _begin_offspring_generation(top_indices: Array[int]) -> void:
 			max_brain_generation_attempts,
 			mutation_probability,
 			num_inputs,
-			num_outputs
+			num_outputs,
+			single_elite_button.button_pressed
 		)
 	)
 
@@ -1900,7 +2060,8 @@ func _generate_offspring_population_thread(
 		maximum_attempts: int,
 		selected_mutation_probability: float,
 		selected_num_inputs: int,
-		selected_num_outputs: int
+		selected_num_outputs: int,
+		selected_single_elite: bool
 	) -> Dictionary:
 	var result = {
 		"brains": [],
@@ -1978,7 +2139,7 @@ func _generate_offspring_population_thread(
 			return result
 
 		var elite_rank: int
-		if partner_slot < first_elite_end:
+		if selected_single_elite or partner_slot < first_elite_end:
 			elite_rank = 0
 		elif partner_slot < second_elite_end:
 			elite_rank = 1
@@ -2160,8 +2321,8 @@ func _start_experiment_from_population(new_generation: bool = true) -> void:
 	if new_generation:
 		generation_number += 1
 		target_test_index = 0
-		if simulation_selector.selected == 4:
-			_simulation_5_shuffle_target_sectors()
+		if simulation_selector.selected == 3 or simulation_selector.selected == 5:
+			_simulation_4_shuffle_target_sectors()
 		generation_real_start_us = Time.get_ticks_usec()
 		generation_real_time_seconds = 0.0
 		generation_fitness_sums = PackedFloat64Array()
@@ -2200,6 +2361,12 @@ func _start_experiment_from_population(new_generation: bool = true) -> void:
 	_reset_experiment_entities()
 	experiment_elapsed_seconds = 0.0
 	summary_elapsed_seconds = 0.0
+	process_frames_to_skip = 0
+	next_step_due_us = 0
+	previous_raw_step_start_us = 0
+	speed_stats_window_start_us = 0
+	speed_stats_window_steps = 0
+	effective_steps_per_second = 0.0
 	last_runtime_ui_update_us = Time.get_ticks_usec()
 	last_agent_info_update_us = last_runtime_ui_update_us
 	best_score_ever = 0.0
@@ -2214,6 +2381,7 @@ func _start_experiment_from_population(new_generation: bool = true) -> void:
 	_update_summary()
 	_refresh_buttons()
 	queue_redraw()
+
 
 func _reset_experiment_entities() -> void:
 	if target == null or agents.size() != agent_count:
@@ -2245,19 +2413,81 @@ func _simulation_1_update_agent_inputs(agent) -> void:
 
 func _simulation_4_reset_agent(agent) -> void:
 	_simulation_1_reset_agent(agent)
-	# Target.reset() precedes agent.reset(), so the distance is well defined.
-	var start_position: Vector2 = agent.state["position"]
-	var initial_distance: float = start_position.distance_to(target.position)
-	agent.state["simulation_4_initial_distance"] = initial_distance
-	agent.state["simulation_4_nearest_distance"] = initial_distance
 	agent.state["simulation_4_first_arrival"] = -1.0
-	agent.state["simulation_4_proximity_integral"] = 0.0
 
 
 func _simulation_4_update_agent_inputs(agent) -> void:
 	_simulation_1_update_agent_inputs(agent)
 	# Input 5 is touch only; it does not reveal obstacle direction or a route.
 	agent.input_signals[4] = 1.0 if _simulation_4_touching_surface(agent.state["position"]) else 0.0
+
+
+func _simulation_6_update_agent_inputs(agent) -> void:
+	# Retain all five original Simulation 4 channels, unchanged.
+	_simulation_4_update_agent_inputs(agent)
+	_simulation_6_write_obstacle_proximity(agent.state["position"], agent)
+
+
+func _simulation_6_write_obstacle_proximity(position: Vector2, agent) -> void:
+	# Match the inflation used in the Simulation 4 swept-collision solver.
+	# The obstacle may move in Free Mode, so read its current transform.
+	var half_agent: float = agent_square_size * 0.5
+	var cos_angle: float = cos(simulation_4_obstacle_angle)
+	var sin_angle: float = sin(simulation_4_obstacle_angle)
+	var relative: Vector2 = position - simulation_4_obstacle_center
+	var local_position: Vector2 = Vector2(
+		relative.x * cos_angle + relative.y * sin_angle,
+		-relative.x * sin_angle + relative.y * cos_angle
+	)
+	var projection: float = absf(cos_angle) + absf(sin_angle)
+	var half_extents: Vector2 = simulation_4_obstacle_size * 0.5 + Vector2.ONE * (half_agent * projection)
+
+	for sensor_index in 8:
+		var direction: Vector2 = SIMULATION_6_SENSOR_DIRECTIONS[sensor_index]
+		# Arena boundaries are also collision surfaces (as in the contact sensor).
+		# Ray directions are unit vectors, so distances are in world pixels.
+		var distance: float = INF
+		if direction.x < -0.00000001:
+			distance = minf(distance, (half_agent - position.x) / direction.x)
+		elif direction.x > 0.00000001:
+			distance = minf(distance, (simulation_size.x - half_agent - position.x) / direction.x)
+		if direction.y < -0.00000001:
+			distance = minf(distance, (half_agent - position.y) / direction.y)
+		elif direction.y > 0.00000001:
+			distance = minf(distance, (simulation_size.y - half_agent - position.y) / direction.y)
+
+		var local_direction: Vector2 = Vector2(
+			direction.x * cos_angle + direction.y * sin_angle,
+			-direction.x * sin_angle + direction.y * cos_angle
+		)
+		distance = minf(distance, _simulation_6_ray_box_distance(local_position, local_direction, half_extents))
+		agent.input_signals[5 + sensor_index] = 1.0 - clampf(maxf(distance, 0.0) / SIMULATION_6_SENSOR_RANGE, 0.0, 1.0)
+
+
+func _simulation_6_ray_box_distance(origin: Vector2, direction: Vector2, half_extents: Vector2) -> float:
+	# Slab intersection with the same (inflated) box used for agent collision.
+	# Negative entry and nonnegative exit mean the ray starts inside/on the box.
+	var entry: float = -INF
+	var exit: float = INF
+	if absf(direction.x) < 0.00000001:
+		if absf(origin.x) > half_extents.x:
+			return INF
+	else:
+		var tx1: float = (-half_extents.x - origin.x) / direction.x
+		var tx2: float = (half_extents.x - origin.x) / direction.x
+		entry = maxf(entry, minf(tx1, tx2))
+		exit = minf(exit, maxf(tx1, tx2))
+	if absf(direction.y) < 0.00000001:
+		if absf(origin.y) > half_extents.y:
+			return INF
+	else:
+		var ty1: float = (-half_extents.y - origin.y) / direction.y
+		var ty2: float = (half_extents.y - origin.y) / direction.y
+		entry = maxf(entry, minf(ty1, ty2))
+		exit = minf(exit, maxf(ty1, ty2))
+	if exit < 0.0 or entry > exit:
+		return INF
+	return maxf(entry, 0.0)
 
 
 func _simulation_4_touching_surface(position: Vector2) -> bool:
@@ -2321,7 +2551,7 @@ func _simulation_4_apply_agent_outputs(agent, step_delta: float) -> void:
 	# Fitness collection normally runs before motor outputs. Also check after
 	# movement to capture arrival on the very last tick of a target test.
 	if not free_mode_active:
-		_simulation_4_record_progress(agent, experiment_elapsed_seconds + step_delta)
+		_simulation_4_record_arrival(agent, experiment_elapsed_seconds + step_delta)
 
 
 func _simulation_4_move_with_collision(start: Vector2, movement: Vector2) -> Vector2:
@@ -2459,82 +2689,20 @@ func _simulation_3_choose_target_waypoint(selected_target) -> void:
 
 
 func _simulation_4_reset_target(selected_target) -> void:
-	# The target is stationary during each test, like in Simulation 1.
-	var half_target_size: float = target_square_size * 0.5
-	var minimum: Vector2 = Vector2.ONE * half_target_size
-	var maximum: Vector2 = simulation_size - minimum
-	var center: Vector2 = simulation_size * 0.5
-	var furthest_radius: float = center.distance_to(minimum)
-	var minimum_radius: float = minf(simulation_4_min_target_distance, furthest_radius)
-	var minimum_radius_squared: float = minimum_radius * minimum_radius
-
-	var candidate: Vector2 = center
-	var found: bool = false
-	for _attempt in 256:
-		candidate = Vector2(
-			randf_range(minimum.x, maximum.x),
-			randf_range(minimum.y, maximum.y)
-		)
-		if candidate.distance_squared_to(center) >= minimum_radius_squared:
-			found = true
-			break
-
-	if not found:
-		# Degenerate configurations with a radius nearly as large as the arena.
-		candidate = Vector2(
-			minimum.x if randf() < 0.5 else maximum.x,
-			minimum.y if randf() < 0.5 else maximum.y
-		)
-
-	selected_target.position = candidate
-	_simulation_4_update_obstacle(true)
-
-
-func _update_simulation_5_num_tests_label() -> void:
-	if not is_instance_valid(simulation_5_num_tests_label):
-		return
-	simulation_5_num_tests_label.visible = simulation_selector.selected == 4
-	simulation_5_num_tests_label.text = "Num Tests: %d" % simulation_5_difficulty
-
-
-func _simulation_5_advance_difficulty_if_ready() -> void:
-	# The generation just finished; its average includes all agents and
-	# every target test of the CURRENT difficulty. The next difficulty is
-	# applied only to the next generation, never in the middle of a test.
-	if simulation_selector.selected != 4 or simulation_5_difficulty >= SIMULATION_5_ANGULAR_SECTOR_COUNT:
-		return
-	var required_mean: float = SIMULATION_5_DIFFICULTY_BASE_THRESHOLD + SIMULATION_5_DIFFICULTY_THRESHOLD_STEP * float(simulation_5_difficulty - 3)
-	if float(_generation_fitness_statistics()["mean"]) <= required_mean:
-		return
-	simulation_5_difficulty += 1
-	target_test_count = simulation_5_difficulty
-	_update_simulation_5_num_tests_label()
-
-
-func _simulation_5_shuffle_target_sectors() -> void:
-	# At difficulty N, visit each of N angular sectors exactly once per
-	# generation. N=3 is the initial curriculum stage; N=12 is the final stage.
-	simulation_5_target_sector_order.clear()
-	for sector_index in simulation_5_difficulty:
-		simulation_5_target_sector_order.append(sector_index)
-	simulation_5_target_sector_order.shuffle()
-
-
-func _simulation_5_reset_target(selected_target) -> void:
 	# Called once before the initial population exists, too.
-	if simulation_5_target_sector_order.size() != simulation_5_difficulty:
-		_simulation_5_shuffle_target_sectors()
+	if simulation_4_target_sector_order.size() != _simulation_4_active_difficulty():
+		_simulation_4_shuffle_target_sectors()
 
 	# One randomly placed target/obstacle in each sector for this generation.
 	# Radial area-uniform sampling keeps the target inside the arena,
-	# outside the same minimum-distance constraint as Simulation 4 when feasible.
+	# outside the configured minimum-distance constraint when feasible.
 	var half_target_size: float = target_square_size * 0.5
 	var minimum: Vector2 = Vector2.ONE * half_target_size
 	var maximum: Vector2 = simulation_size - minimum
 	var center: Vector2 = simulation_size * 0.5
 
-	var sector_index: int = simulation_5_target_sector_order[target_test_index]
-	var sector_width: float = TAU / float(simulation_5_difficulty)
+	var sector_index: int = simulation_4_target_sector_order[target_test_index]
+	var sector_width: float = TAU / float(_simulation_4_active_difficulty())
 	var angle: float = (float(sector_index) + randf()) * sector_width
 	var direction: Vector2 = Vector2(cos(angle), sin(angle))
 
@@ -2558,6 +2726,26 @@ func _simulation_5_reset_target(selected_target) -> void:
 	)
 	selected_target.position = center + direction * sqrt(squared_radius)
 	_simulation_4_update_obstacle(true)
+
+
+func _simulation_5_advance_difficulty_if_ready() -> void:
+	# Mean over ALL agents and ALL tests, never a single elite or one layout.
+	# Changes apply to the next generation only.
+	if simulation_selector.selected != 4 or simulation_5_difficulty >= SIMULATION_5_MAX_DIFFICULTY:
+		return
+	if float(_generation_fitness_statistics()["mean"]) <= SIMULATION_5_ADVANCE_THRESHOLD:
+		return
+	simulation_5_difficulty += 1
+	_update_simulation_4_num_tests_label()
+
+
+func _simulation_5_reset_target(selected_target) -> void:
+	# Generated once per target test, BEFORE resetting all agents.
+	simulation_5_maze.generate(
+		simulation_5_difficulty, simulation_size,
+		SIMULATION_5_WALL_THICKNESS, agent_square_size
+	)
+	selected_target.position = simulation_5_maze.target_position
 
 
 func _simulation_4_update_obstacle(randomize_dimensions: bool) -> void:
@@ -2638,72 +2826,21 @@ func _simulation_1_fitness(agent_index: int) -> float:
 	return fitness_integrals[agent_index] / experiment_elapsed_seconds
 
 
-func _simulation_4_record_progress(agent, elapsed_time: float) -> void:
-	# Keep updating nearest distance even after the first contact.
-	var position: Vector2 = agent.state["position"]
-	var displacement: Vector2 = target.position - position
-	var distance: float = displacement.length()
-	agent.state["simulation_4_nearest_distance"] = minf(
-		float(agent.state["simulation_4_nearest_distance"]), distance
-	)
-
-	# Both agents and target are rendered as axis-aligned squares. A goal is
-	# reached when these squares first touch or overlap.
-	var contact_half_size: float = (agent_square_size + target_square_size) * 0.5
-	if float(agent.state["simulation_4_first_arrival"]) < 0.0 and absf(displacement.x) <= contact_half_size and absf(displacement.y) <= contact_half_size:
-		agent.state["simulation_4_first_arrival"] = elapsed_time
-
-
-# Fitness is calculated for evolutionary selection only, not fed to the brain.
-# At each physics tick, integrate proximity throughout the target test.
-# R is the existing target square size, measured center-to-center.
 func _simulation_4_proximity_score(distance: float) -> float:
-	var radius: float = maxf(target_square_size, 0.000001)
-	if distance >= radius:
-		return 0.0
-	var relative_distance: float = distance / radius
-	var shape: float = 1.0 - relative_distance * relative_distance
-	return shape * shape
-
-
-func _simulation_4_accumulate_fitness(step_delta: float) -> void:
-	for agent in agents:
-		_simulation_4_record_progress(agent, experiment_elapsed_seconds)
-		var position: Vector2 = agent.state["position"]
-		var distance: float = position.distance_to(target.position)
-		agent.state["simulation_4_proximity_integral"] = float(
-			agent.state["simulation_4_proximity_integral"]
-		) + _simulation_4_proximity_score(distance) * step_delta
-
-
-# F = w * best_normalized_progress + (1-w) * time_average(proximity).
-# A momentary contact earns only its contribution to the time integral;
-# sustained presence within target_square_size is what raises fitness.
-func _simulation_4_agent_fitness(agent) -> float:
-	var initial_distance: float = maxf(float(agent.state.get("simulation_4_initial_distance", 0.0)), 0.000001)
-	var nearest_distance: float = float(agent.state.get("simulation_4_nearest_distance", initial_distance))
-	var progress: float = clampf(1.0 - nearest_distance / initial_distance, 0.0, 1.0)
-	var elapsed: float = maxf(experiment_elapsed_seconds, 0.000001)
-	var proximity_integral: float = float(agent.state.get("simulation_4_proximity_integral", 0.0))
-	var mean_proximity: float = clampf(proximity_integral / elapsed, 0.0, 1.0)
-	return simulation_4_progress_weight * progress + (1.0 - simulation_4_progress_weight) * mean_proximity
-
-
-func _simulation_4_fitness(agent_index: int) -> float:
-	return _simulation_4_agent_fitness(agents[agent_index])
-
-
-# Simulation 5: score is 1 inside the target's 12-pixel radius (by default),
-# then decays exponentially with excess center-to-center distance.
-func _simulation_5_proximity_score(distance: float) -> float:
 	var radius: float = maxf(target_square_size, 0.000001)
 	return exp(-maxf(distance - radius, 0.0) / 100.0)
 
 
 # Only the last second of each target test contributes to fitness.
-# Clamp the integrated portion of each physics tick to the final-time window,
+# Clamp the integrated portion of each neural step to the final-time window,
 # so the result does not depend on a tick landing exactly at its beginning.
-func _simulation_5_accumulate_fitness(step_delta: float) -> void:
+
+
+func _simulation_4_accumulate_fitness(step_delta: float) -> void:
+	# Keep the obstacle/arrival diagnostics correct throughout the test, even
+	# though fitness deliberately uses only its final second.
+	for agent in agents:
+		_simulation_4_record_arrival(agent, experiment_elapsed_seconds)
 	var window_start: float = maxf(experiment_duration_seconds - 1.0, 0.0)
 	var window_delta: float = minf(experiment_elapsed_seconds + step_delta, experiment_duration_seconds) - maxf(experiment_elapsed_seconds, window_start)
 	if window_delta <= 0.0:
@@ -2711,28 +2848,45 @@ func _simulation_5_accumulate_fitness(step_delta: float) -> void:
 
 	for agent_index in agent_count:
 		var position: Vector2 = agents[agent_index].state["position"]
-		fitness_integrals[agent_index] += _simulation_5_proximity_score(position.distance_to(target.position)) * window_delta
+		fitness_integrals[agent_index] += _simulation_4_proximity_score(position.distance_to(target.position)) * window_delta
 
 
-func _simulation_5_fitness(agent_index: int) -> float:
+func _simulation_4_fitness(agent_index: int) -> float:
 	var window_length: float = minf(experiment_duration_seconds, 1.0)
 	if window_length <= 0.0:
 		return 0.0
 	return clampf(fitness_integrals[agent_index] / window_length, 0.0, 1.0)
 
 
+func _simulation_5_accumulate_fitness(_step_delta: float) -> void:
+	# Spatial progress only: no duration, speed, elapsed-time integration,
+	# early-arrival bonus or time penalty anywhere in the fitness equation.
+	for agent in agents:
+		_simulation_5_record_progress(agent, experiment_elapsed_seconds)
+
+
+func _simulation_5_fitness(agent_index: int) -> float:
+	var agent = agents[agent_index]
+	return maxf(
+		float(agent.state.get("simulation_5_best_progress", 0.0)),
+		_simulation_5_position_progress(agent.state["position"])
+	)
+
+
 func _simulation_5_evaluate_agent(agent) -> Vector2:
 	var position: Vector2 = agent.state["position"]
-	var normalized_distance: float = position.distance_to(target.position) / simulation_size.length()
-	# The score component is instantaneous for diagnostics; accumulated fitness
-	# still uses only the last second of the test.
-	return Vector2(_simulation_5_proximity_score(position.distance_to(target.position)), normalized_distance)
+	return Vector2(
+		_simulation_5_position_progress(position),
+		simulation_5_maze.distance_to_target(position) / simulation_5_maze.initial_distance
+	)
 
 
 func _simulation_4_evaluate_agent(agent) -> Vector2:
 	var position: Vector2 = agent.state["position"]
 	var normalized_distance: float = position.distance_to(target.position) / simulation_size.length()
-	return Vector2(_simulation_4_agent_fitness(agent), normalized_distance)
+	# The score component is instantaneous for diagnostics; accumulated fitness
+	# still uses only the last second of the test.
+	return Vector2(_simulation_4_proximity_score(position.distance_to(target.position)), normalized_distance)
 
 
 func _simulation_4_agent_info(agent_index: int) -> Dictionary:
@@ -2749,6 +2903,21 @@ func _simulation_4_agent_info(agent_index: int) -> Dictionary:
 		main_text += "\nFirst arrival: %.2f s" % first_arrival
 	main_text += "\nFitness: %.3f" % float(fitness_behavior.call(agent_index))
 	info["main"] = main_text
+	return info
+
+
+func _simulation_6_agent_info(agent_index: int) -> Dictionary:
+	var info: Dictionary = _simulation_4_agent_info(agent_index)
+	if info.is_empty():
+		return info
+	var inputs: PackedFloat64Array = agents[agent_index].input_signals
+	if inputs.size() < 13:
+		return info
+	var directions: Array[String] = ["W", "E", "N", "S", "NW", "NE", "SW", "SE"]
+	var extra: String = ""
+	for sensor_index in 8:
+		extra += "\nInput %d (wall %s): %.2f" % [6 + sensor_index, directions[sensor_index], float(inputs[5 + sensor_index])]
+	info["main"] = str(info["main"]).replace("\nOutput 1 (move left):", extra + "\nOutput 1 (move left):")
 	return info
 
 
@@ -3153,6 +3322,7 @@ func _record_completed_generation() -> void:
 	evolution_mean_fitness_history.append(mean_fitness)
 	evolution_best_fitness_history.append(best_fitness)
 	genetic_diversity_history.append(_population_genetic_diversity())
+	elite_genetic_diversity_history.append(_elite_genetic_diversity())
 	if heatmap_tracking_enabled:
 		_record_phenotypic_fitness_generation()
 	_rebuild_history_graph_caches()
@@ -3193,20 +3363,30 @@ func _reset_evolution_statistics() -> void:
 	evolution_mean_fitness_history = PackedFloat64Array()
 	evolution_best_fitness_history = PackedFloat64Array()
 	genetic_diversity_history = PackedFloat64Array()
+	elite_genetic_diversity_history = PackedFloat64Array()
 	evolution_graph_mean_points_cache = PackedVector2Array()
 	evolution_graph_best_points_cache = PackedVector2Array()
 	genetic_diversity_graph_points_cache = PackedVector2Array()
+	elite_genetic_diversity_graph_points_cache = PackedVector2Array()
 	genetic_diversity_excluded_agent_indices.clear()
+	current_elite_turnover_count = 0
+	previous_generation_elite_signatures.clear()
 	evolution_graph_minimum_value_cache = 0.0
 	evolution_graph_maximum_value_cache = 1.0
 	genetic_diversity_minimum_exponent_cache = -1
 	_queue_history_graph_redraw()
 	target_test_index = 0
-	simulation_5_difficulty = 3
-	if simulation_selector.selected == 4:
-		target_test_count = simulation_5_difficulty
-	simulation_5_target_sector_order.clear()
-	_update_simulation_5_num_tests_label()
+	simulation_4_difficulty = 3
+	simulation_5_difficulty = 1
+	simulation_6_difficulty = 3
+	if simulation_selector.selected == 3:
+		target_test_count = simulation_4_difficulty
+	elif simulation_selector.selected == 4:
+		target_test_count = SIMULATION_5_NUM_TESTS
+	elif simulation_selector.selected == 5:
+		target_test_count = simulation_6_difficulty
+	simulation_4_target_sector_order.clear()
+	_update_simulation_4_num_tests_label()
 	generation_fitness_sums = PackedFloat64Array()
 	generation_mean_final_score_sum = 0.0
 	generation_best_final_score = -1.0
@@ -3231,7 +3411,6 @@ func _finish_experiment() -> void:
 	if generation_real_start_us > 0:
 		generation_real_time_seconds = float(Time.get_ticks_usec() - generation_real_start_us) / 1000000.0
 		generation_real_start_us = 0
-		print("Generation %d real time: %.3f s" % [generation_number, generation_real_time_seconds])
 
 	_record_completed_generation()
 	_update_summary()
@@ -3245,6 +3424,7 @@ func _finish_experiment() -> void:
 		return
 
 	_capture_last_generation_best_brain(int(top_indices[0]))
+	_simulation_4_advance_difficulty_if_ready()
 	_simulation_5_advance_difficulty_if_ready()
 	_begin_offspring_generation(top_indices)
 
@@ -3259,10 +3439,11 @@ func _update_summary() -> void:
 	var best_fitness_agent: int = int(fitness_statistics["best_agent"])
 	var displayed_generation_real_time: float = generation_real_time_seconds
 	var simulation_4_success_text: String = ""
-	if simulation_selector.selected == 3 or simulation_selector.selected == 4:
+	if simulation_selector.selected == 3 or simulation_selector.selected == 4 or simulation_selector.selected == 5:
 		var arrival_count: int = 0
+		var arrival_key: String = "simulation_5_first_arrival" if simulation_selector.selected == 4 else "simulation_4_first_arrival"
 		for agent in agents:
-			if float(agent.state.get("simulation_4_first_arrival", -1.0)) >= 0.0:
+			if float(agent.state.get(arrival_key, -1.0)) >= 0.0:
 				arrival_count += 1
 		simulation_4_success_text = "Reached target: %d / %d\n" % [arrival_count, agent_count]
 	if generation_real_start_us > 0:
@@ -3289,7 +3470,8 @@ func _update_summary() -> void:
 		"Status: %s\n" % status
 		+ "Time: %.3f / %.3f s\n" % [experiment_elapsed_seconds, experiment_duration_seconds]
 		+ "Agents: %d\n" % agent_count
-		+ "Neural iterations/s: %.1f\n" % effective_steps_per_second
+		+ "Speed: %s | Neural iterations/s: %.1f\n" % [
+			speed_selector.get_item_text(speed_selector.selected), effective_steps_per_second]
 		+ "Target test: %d / %d\n" % [target_test_index + 1, target_test_count]
 		+ "Mean fitness: %.3f\n" % mean_fitness
 		+ "Best fitness: %.3f  (Agent %d)\n" % [best_fitness, best_fitness_agent + 1]
@@ -3316,7 +3498,7 @@ func _state_text() -> String:
 
 
 func _refresh_buttons() -> void:
-	var generating = experiment_state == ExperimentState.GENERATING or generation_thread != null
+	var generating = generation_thread != null or experiment_state == ExperimentState.GENERATING or experiment_state == ExperimentState.OFFSPRING
 	var simulation_active = _simulation_is_active()
 	start_button.text = "Reset" if simulation_active else "Start"
 	start_button.disabled = reset_pending
@@ -3328,7 +3510,9 @@ func _refresh_buttons() -> void:
 	save_button.disabled = generating or not _has_population_to_save()
 	save_brain_button.disabled = last_generation_best_brain_data.is_empty()
 	free_mode_button.disabled = experiment_state != ExperimentState.RUNNING
-	simulation_selector.disabled = simulation_active
+	# Simulation changes remain available during evolution; the selection
+	# callback enforces neural input/output compatibility.
+	simulation_selector.disabled = reset_pending
 	num_agents_spinbox.editable = not simulation_active and not reset_pending
 	dimension_i_field.editable = not simulation_active
 	dimension_j_field.editable = not simulation_active
@@ -3431,10 +3615,12 @@ func _save_best_brain_to_file(path: String) -> void:
 
 
 func _save_to_file(path: String) -> void:
-	# Mutation can be edited while running; always persist the current valid field.
+	# Persist what the editable field currently shows, including changes made
+	# during the running generation, rather than a startup-only snapshot.
 	if not _try_update_mutation_probability(mutation_probability_field.text):
 		summary_label.text = "Cannot save: Mutation Probability must be a finite number between 0 and 1."
 		return
+
 	var save_path = path
 	if save_path.get_extension().to_lower() != SAVE_EXTENSION:
 		save_path += "." + SAVE_EXTENSION
@@ -3446,15 +3632,17 @@ func _save_to_file(path: String) -> void:
 			"num_inputs": num_inputs,
 			"num_outputs": num_outputs,
 			"agent_count": agent_count,
-			"connections_density": connections_density,
 			"generation_time_seconds": experiment_duration_seconds,
+			"connections_density": connections_density,
 		},
 		"experiment_parameters": {
+			"simulation_number": active_simulation_index + 1,
 			"agent_speed": agent_speed,
 			"simulation_size": simulation_size,
 			"agent_square_size": agent_square_size,
 			"target_square_size": target_square_size,
 			"mutation_probability": mutation_probability,
+			"single_elite": single_elite_button.button_pressed,
 		},
 		"genomes": population_genomes.duplicate(true),
 		"summary": summary_label.text,
@@ -3474,9 +3662,14 @@ func _save_to_file(path: String) -> void:
 			"mean_fitness_history": evolution_mean_fitness_history.duplicate(),
 			"best_fitness_history": evolution_best_fitness_history.duplicate(),
 			"genetic_diversity_history": genetic_diversity_history.duplicate(),
+			"elite_genetic_diversity_history": elite_genetic_diversity_history.duplicate(),
+			"current_elite_turnover_count": current_elite_turnover_count,
 			"genetic_diversity_excluded_agent_indices": genetic_diversity_excluded_agent_indices.duplicate(),
 			"previous_generation_elite_indices": previous_generation_elite_indices.duplicate(),
+			"previous_generation_elite_signatures": previous_generation_elite_signatures.duplicate(),
+			"simulation_4_difficulty": simulation_4_difficulty,
 			"simulation_5_difficulty": simulation_5_difficulty,
+			"simulation_6_difficulty": simulation_6_difficulty,
 		},
 		"results": {
 			"elapsed_time_seconds": experiment_elapsed_seconds,
@@ -3495,7 +3688,6 @@ func _save_to_file(path: String) -> void:
 	file.store_var(data)
 	file.close()
 	save_button.tooltip_text = "Last saved file: %s" % save_path
-	print("Simulation saved to: ", save_path)
 
 
 func _current_agent_positions() -> Array:
@@ -3561,8 +3753,9 @@ func _load_from_file(path: String) -> void:
 	var evolution: Dictionary = data.get("evolution", {})
 	var size: Vector3i = external["size"]
 	var generation_time = float(external["generation_time_seconds"])
-	# Legacy binary saves imply eta=1.0, and their genome count is authoritative.
+	# Older saved simulations were generated with the original density eta = 1.
 	connections_density = float(external.get("connections_density", 1.0))
+	# Version 2 saves without this optional field remain valid: infer from genomes.
 	var saved_agent_count: int = data["genomes"].size()
 
 	_clear_runtime_state()
@@ -3570,11 +3763,19 @@ func _load_from_file(path: String) -> void:
 	num_agents_spinbox.set_value_no_signal(float(agent_count))
 	_setup_simulation(simulation_selector.selected)
 	_reset_evolution_statistics()
-	if simulation_selector.selected == 4:
-		# Optional for compatibility with saves created before this curriculum.
-		simulation_5_difficulty = clampi(int(evolution.get("simulation_5_difficulty", 3)), 3, SIMULATION_5_ANGULAR_SECTOR_COUNT)
-		target_test_count = simulation_5_difficulty
-		_update_simulation_5_num_tests_label()
+	if simulation_selector.selected == 3:
+		# Old Simulation 5 saves use the legacy difficulty key.
+		simulation_4_difficulty = clampi(int(evolution.get("simulation_4_difficulty", 3)), 3, SIMULATION_4_ANGULAR_SECTOR_COUNT)
+		target_test_count = simulation_4_difficulty
+		_update_simulation_4_num_tests_label()
+	elif simulation_selector.selected == 4:
+		simulation_5_difficulty = clampi(int(evolution.get("simulation_5_difficulty", 1)), 1, SIMULATION_5_MAX_DIFFICULTY)
+		target_test_count = SIMULATION_5_NUM_TESTS
+		_update_simulation_4_num_tests_label()
+	elif simulation_selector.selected == 5:
+		simulation_6_difficulty = clampi(int(evolution.get("simulation_6_difficulty", 3)), 3, SIMULATION_4_ANGULAR_SECTOR_COUNT)
+		target_test_count = simulation_6_difficulty
+		_update_simulation_4_num_tests_label()
 
 	if not evolution.is_empty():
 		generation_number = int(evolution.get("generation_number", 0))
@@ -3592,19 +3793,39 @@ func _load_from_file(path: String) -> void:
 		var saved_mean_fitness_history = evolution.get("mean_fitness_history", PackedFloat64Array())
 		var saved_best_fitness_history = evolution.get("best_fitness_history", PackedFloat64Array())
 		var saved_genetic_diversity_history = evolution.get("genetic_diversity_history", PackedFloat64Array())
+		var saved_elite_genetic_diversity_history = evolution.get("elite_genetic_diversity_history", PackedFloat64Array())
+		var saved_elite_turnover_count = int(evolution.get("current_elite_turnover_count", 0))
 		var saved_genetic_diversity_excluded_indices = evolution.get("genetic_diversity_excluded_agent_indices", [])
 		var saved_elite_indices = evolution.get("previous_generation_elite_indices", [])
+		var saved_elite_signatures = evolution.get("previous_generation_elite_signatures", [])
+		current_elite_turnover_count = maxi(0, mini(3, saved_elite_turnover_count))
+		previous_generation_elite_indices.clear()
 		if saved_elite_indices is Array:
 			for elite_index_variant in saved_elite_indices:
 				var elite_index: int = int(elite_index_variant)
 				if elite_index >= 0 and elite_index < agent_count and elite_index not in previous_generation_elite_indices:
 					previous_generation_elite_indices.append(elite_index)
+		previous_generation_elite_signatures.clear()
+		if saved_elite_signatures is Array:
+			for signature_variant in saved_elite_signatures:
+				var signature: String = String(signature_variant)
+				if not signature.is_empty():
+					previous_generation_elite_signatures.append(signature)
 		if saved_mean_fitness_history is PackedFloat64Array:
 			evolution_mean_fitness_history = saved_mean_fitness_history.duplicate()
 		if saved_best_fitness_history is PackedFloat64Array:
 			evolution_best_fitness_history = saved_best_fitness_history.duplicate()
 		if saved_genetic_diversity_history is PackedFloat64Array:
 			genetic_diversity_history = saved_genetic_diversity_history.duplicate()
+		# Older format-version-2 files have no elite history. Preserve their
+		# original generation axis without fabricating measurements.
+		var historical_count: int = genetic_diversity_history.size()
+		elite_genetic_diversity_history.resize(historical_count)
+		elite_genetic_diversity_history.fill(-1.0)
+		if saved_elite_genetic_diversity_history is PackedFloat64Array:
+			var known_count: int = mini(historical_count, saved_elite_genetic_diversity_history.size())
+			for index in known_count:
+				elite_genetic_diversity_history[historical_count - known_count + index] = saved_elite_genetic_diversity_history[saved_elite_genetic_diversity_history.size() - known_count + index]
 		genetic_diversity_excluded_agent_indices.clear()
 		if saved_genetic_diversity_excluded_indices is Array:
 			for index_variant in saved_genetic_diversity_excluded_indices:
@@ -3642,6 +3863,9 @@ func _load_from_file(path: String) -> void:
 		agent_square_size = float(experiment_parameters["agent_square_size"])
 	if experiment_parameters.has("target_square_size"):
 		target_square_size = float(experiment_parameters["target_square_size"])
+	# Older saves default to the historical three-elite reproduction mode.
+	single_elite_button.set_pressed_no_signal(bool(experiment_parameters.get("single_elite", false)))
+	_update_single_elite_button()
 	if experiment_parameters.has("mutation_probability"):
 		mutation_probability = float(experiment_parameters["mutation_probability"])
 	else:
@@ -3709,3 +3933,287 @@ func _validate_save_data(data: Variant) -> String:
 			return "A saved genome is not a Dictionary."
 
 	return ""
+
+func _on_single_elite_toggled(_enabled: bool) -> void:
+	# The next offspring generation snapshots this setting before native construction.
+	_update_single_elite_button()
+
+
+func _update_single_elite_button() -> void:
+	# The toggle state is also visible without opening the tooltip.
+	single_elite_button.text = "Single: ON" if single_elite_button.button_pressed else "Single: OFF"
+
+
+func _genome_signature(genome: Dictionary) -> String:
+	return Marshalls.raw_to_base64(_flatten_genome(genome))
+
+
+func _elite_signatures_from_indices(indices: Array[int]) -> Array[String]:
+	var signatures: Array[String] = []
+	for elite_index in indices:
+		if elite_index >= 0 and elite_index < population_genomes.size():
+			signatures.append(_genome_signature(population_genomes[elite_index]))
+	return signatures
+
+
+func _elite_turnover_count(previous_signatures: Array[String], current_signatures: Array[String]) -> int:
+	if previous_signatures.is_empty() or current_signatures.is_empty():
+		return 0
+	var previous_counts: Dictionary = {}
+	for signature in previous_signatures:
+		previous_counts[signature] = int(previous_counts.get(signature, 0)) + 1
+	var shared_count: int = 0
+	for signature in current_signatures:
+		var remaining: int = int(previous_counts.get(signature, 0))
+		if remaining > 0:
+			shared_count += 1
+			previous_counts[signature] = remaining - 1
+	return maxi(0, current_signatures.size() - shared_count)
+
+
+func _elite_genetic_diversity() -> float:
+	# Rank by the completed generation's fitness, not by the previous elites.
+	return _mean_genetic_diversity_for_indices(_get_top_three_agent_indices())
+
+
+func _mean_genetic_diversity_for_indices(agent_indices: Array[int]) -> float:
+	if agent_indices.size() < 2:
+		return 0.0
+
+	var flattened_genomes: Array = []
+	flattened_genomes.resize(agent_indices.size())
+	for included_index in agent_indices.size():
+		flattened_genomes[included_index] = _flatten_genome(population_genomes[agent_indices[included_index]])
+
+	var genome_length: int = flattened_genomes[0].size()
+	if genome_length == 0:
+		return 0.0
+	var total_normalized_distance: float = 0.0
+	var pair_count: int = 0
+
+	for first_index in flattened_genomes.size() - 1:
+		var first_genome: PackedByteArray = flattened_genomes[first_index]
+		for second_index in range(first_index + 1, flattened_genomes.size()):
+			var second_genome: PackedByteArray = flattened_genomes[second_index]
+			var hamming_distance: int = 0
+			for gene_index in genome_length:
+				if first_genome[gene_index] != second_genome[gene_index]:
+					hamming_distance += 1
+			total_normalized_distance += float(hamming_distance) / float(genome_length)
+			pair_count += 1
+
+	return total_normalized_distance / float(pair_count)
+
+
+func _moving_average_available(values: PackedFloat64Array, window_size: int) -> PackedFloat64Array:
+	# -1 means "not recorded" in saves predating the elite metric.
+	var averaged_values: PackedFloat64Array = PackedFloat64Array()
+	averaged_values.resize(values.size())
+	var running_sum: float = 0.0
+	var valid_count: int = 0
+	for index in values.size():
+		if values[index] >= 0.0:
+			running_sum += values[index]
+			valid_count += 1
+		if index >= window_size and values[index - window_size] >= 0.0:
+			running_sum -= values[index - window_size]
+			valid_count -= 1
+		averaged_values[index] = running_sum / float(valid_count) if valid_count > 0 else -1.0
+	return averaged_values
+
+
+func _simulation_5_reset_agent(agent) -> void:
+	agent.state["position"] = simulation_5_maze.start_position
+	agent.state["simulation_5_best_progress"] = 0.0
+	agent.state["simulation_5_first_arrival"] = -1.0
+
+
+func _simulation_5_update_agent_inputs(agent) -> void:
+	# 1-4: signed target displacement (the same channels as Simulations 1-4).
+	# 5-8: proximity to the FIRST wall/boundary in four cardinal directions.
+	# Only local geometry inside SENSOR_RANGE is visible; no map, graph path,
+	# distance-to-goal field, fitness or target-dependent steering is revealed.
+	_simulation_1_update_agent_inputs(agent)
+	var proximity: PackedFloat32Array = _simulation_5_wall_proximity(agent.state["position"])
+	for direction in 4:
+		agent.input_signals[4 + direction] = proximity[direction]
+
+
+func _simulation_5_wall_proximity(position: Vector2) -> PackedFloat32Array:
+	# Cast four axis-aligned rays against the agent-INFLATED wall rectangles.
+	# Distances therefore refer to how far the actual square agent can move
+	# before touching something (not the distance from its center to the paint).
+	var half_agent: float = agent_square_size * 0.5
+	var left_distance: float = maxf(position.x - half_agent, 0.0)
+	var right_distance: float = maxf(simulation_size.x - half_agent - position.x, 0.0)
+	var up_distance: float = maxf(position.y - half_agent, 0.0)
+	var down_distance: float = maxf(simulation_size.y - half_agent - position.y, 0.0)
+
+	for wall in simulation_5_maze.walls:
+		var rect: Rect2 = wall.grow(half_agent)
+		var low: Vector2 = rect.position
+		var high: Vector2 = rect.end
+		if position.y >= low.y and position.y <= high.y:
+			if position.x < low.x:
+				right_distance = minf(right_distance, low.x - position.x)
+			elif position.x > high.x:
+				left_distance = minf(left_distance, position.x - high.x)
+			else:
+				left_distance = 0.0
+				right_distance = 0.0
+		if position.x >= low.x and position.x <= high.x:
+			if position.y < low.y:
+				down_distance = minf(down_distance, low.y - position.y)
+			elif position.y > high.y:
+				up_distance = minf(up_distance, position.y - high.y)
+			else:
+				up_distance = 0.0
+				down_distance = 0.0
+
+	var result := PackedFloat32Array()
+	result.resize(4)
+	result[0] = 1.0 - clampf(left_distance / SIMULATION_5_SENSOR_RANGE, 0.0, 1.0)
+	result[1] = 1.0 - clampf(right_distance / SIMULATION_5_SENSOR_RANGE, 0.0, 1.0)
+	result[2] = 1.0 - clampf(up_distance / SIMULATION_5_SENSOR_RANGE, 0.0, 1.0)
+	result[3] = 1.0 - clampf(down_distance / SIMULATION_5_SENSOR_RANGE, 0.0, 1.0)
+	return result
+
+
+func _simulation_5_apply_agent_outputs(agent, step_delta: float) -> void:
+	var movement: Vector2 = Vector2(
+		agent.output_signals[1] - agent.output_signals[0],
+		agent.output_signals[3] - agent.output_signals[2]
+	) * agent_speed * step_delta
+	var previous: Vector2 = agent.state["position"]
+	var next_position: Vector2 = _simulation_5_move_with_collision(previous, movement)
+	var half_agent: float = agent_square_size * 0.5
+	next_position.x = clampf(next_position.x, half_agent, simulation_size.x - half_agent)
+	next_position.y = clampf(next_position.y, half_agent, simulation_size.y - half_agent)
+	agent.state["position"] = next_position
+	if not free_mode_active:
+		# Record after movement too; the final neural tick must count.
+		_simulation_5_record_progress(agent, experiment_elapsed_seconds + step_delta)
+
+
+func _simulation_5_move_with_collision(start: Vector2, movement: Vector2) -> Vector2:
+	# Continuous swept AABB collision, analogous to Simulation 4. Handles all
+	# walls and preserves tangential movement when sliding along an obstacle.
+	var position: Vector2 = start
+	var remaining: Vector2 = movement
+	var half_agent: Vector2 = Vector2.ONE * (agent_square_size * 0.5)
+	for _collision in 4:
+		if remaining.length_squared() < 0.000000000001:
+			break
+		var earliest: float = INF
+		var normal: Vector2 = Vector2.ZERO
+		for wall in simulation_5_maze.walls:
+			var hit: Vector3 = _simulation_4_sweep_obstacle(
+				position - wall.get_center(), remaining,
+				wall.size * 0.5 + half_agent
+			)
+			if hit.x >= 0.0 and hit.x < earliest:
+				earliest = hit.x
+				normal = Vector2(hit.y, hit.z)
+		if earliest == INF:
+			position += remaining
+			break
+		position += remaining * earliest
+		position += normal * SIMULATION_4_COLLISION_EPSILON
+		remaining *= 1.0 - earliest
+		var inward: float = remaining.dot(normal)
+		if inward < 0.0:
+			remaining -= normal * inward
+	return position
+
+
+func _update_simulation_4_num_tests_label() -> void:
+	if not is_instance_valid(simulation_4_num_tests_label):
+		return
+	simulation_4_num_tests_label.visible = simulation_selector.selected == 3 or simulation_selector.selected == 4 or simulation_selector.selected == 5
+	if simulation_selector.selected == 4:
+		simulation_4_num_tests_label.text = "Difficulty: %d / %d" % [simulation_5_difficulty, SIMULATION_5_MAX_DIFFICULTY]
+	elif simulation_selector.selected == 5:
+		simulation_4_num_tests_label.text = "Num Tests: %d" % simulation_6_difficulty
+	else:
+		simulation_4_num_tests_label.text = "Num Tests: %d" % simulation_4_difficulty
+
+
+func _simulation_4_advance_difficulty_if_ready() -> void:
+	# The generation just finished; its average includes every agent and
+	# every target test of the CURRENT difficulty. The next difficulty is
+	# applied only to the next generation, never in the middle of a test.
+	if simulation_selector.selected != 3 and simulation_selector.selected != 5:
+		return
+	var current_difficulty: int = _simulation_4_active_difficulty()
+	if current_difficulty >= SIMULATION_4_ANGULAR_SECTOR_COUNT:
+		return
+	var required_mean: float = SIMULATION_4_DIFFICULTY_BASE_THRESHOLD + SIMULATION_4_DIFFICULTY_THRESHOLD_STEP * float(current_difficulty - 3)
+	if float(_generation_fitness_statistics()["mean"]) <= required_mean:
+		return
+	if simulation_selector.selected == 5:
+		simulation_6_difficulty += 1
+	else:
+		simulation_4_difficulty += 1
+	target_test_count = _simulation_4_active_difficulty()
+	_update_simulation_4_num_tests_label()
+
+
+func _simulation_4_active_difficulty() -> int:
+	return simulation_6_difficulty if simulation_selector.selected == 5 else simulation_4_difficulty
+
+
+func _simulation_4_shuffle_target_sectors() -> void:
+	# At difficulty N, visit each of N angular sectors exactly once per
+	# generation. N=3 is the initial curriculum stage; N=12 is the final stage.
+	simulation_4_target_sector_order.clear()
+	for sector_index in _simulation_4_active_difficulty():
+		simulation_4_target_sector_order.append(sector_index)
+	simulation_4_target_sector_order.shuffle()
+
+
+func _simulation_4_record_arrival(agent, elapsed_time: float) -> void:
+	var position: Vector2 = agent.state["position"]
+	var displacement: Vector2 = target.position - position
+	# Both agents and target are rendered as axis-aligned squares. A goal is
+	# reached when these squares first touch or overlap.
+	var contact_half_size: float = (agent_square_size + target_square_size) * 0.5
+	if float(agent.state["simulation_4_first_arrival"]) < 0.0 and absf(displacement.x) <= contact_half_size and absf(displacement.y) <= contact_half_size:
+		agent.state["simulation_4_first_arrival"] = elapsed_time
+
+
+# Simulation 4: score is 1 inside the target's 12-pixel radius (by default),
+# then decays exponentially with excess center-to-center distance.
+
+
+func _simulation_5_position_progress(position: Vector2) -> float:
+	var delta: Vector2 = position - target.position
+	var touching_distance: float = 0.5 * (agent_square_size + target_square_size)
+	if absf(delta.x) <= touching_distance and absf(delta.y) <= touching_distance:
+		return 1.0
+	return simulation_5_maze.progress(position)
+
+
+func _simulation_5_record_progress(agent, elapsed_time: float) -> void:
+	var progress: float = _simulation_5_position_progress(agent.state["position"])
+	agent.state["simulation_5_best_progress"] = maxf(
+		float(agent.state.get("simulation_5_best_progress", 0.0)), progress
+	)
+	if progress >= 1.0 and float(agent.state.get("simulation_5_first_arrival", -1.0)) < 0.0:
+		agent.state["simulation_5_first_arrival"] = elapsed_time
+
+
+func _simulation_5_agent_info(agent_index: int) -> Dictionary:
+	var info: Dictionary = _simulation_1_agent_info(agent_index)
+	if info.is_empty():
+		return info
+	var inputs = agents[agent_index].input_signals
+	if inputs.size() < 8:
+		return info
+	var extra_inputs: String = (
+		"\nInput 5 (wall left): %.2f"
+		+ "\nInput 6 (wall right): %.2f"
+		+ "\nInput 7 (wall up): %.2f"
+		+ "\nInput 8 (wall down): %.2f"
+	) % [float(inputs[4]), float(inputs[5]), float(inputs[6]), float(inputs[7])]
+	info["main"] = str(info["main"]).replace("\nOutput 1 (move left):", extra_inputs + "\nOutput 1 (move left):")
+	return info

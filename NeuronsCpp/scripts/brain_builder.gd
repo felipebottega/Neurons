@@ -43,12 +43,13 @@ func build(genome: Genome, size: Vector3i, num_inputs: int, num_outputs: int, pr
 	print('A: ', (end - start)/1000.0, ' seconds')
 	
 	start = Time.get_ticks_msec()
-	_set_input_output_neurons(brain["neurons"], size, num_inputs, num_outputs, progress_callback)
+	_create_connections(brain, genome.connections, genome.initial_search_region, progress_callback)
 	end = Time.get_ticks_msec()
 	print('B: ', (end - start)/1000.0, ' seconds')
 	
 	start = Time.get_ticks_msec()
-	_create_connections(brain, genome.connections, genome.initial_search_region, progress_callback)
+	brain["role_selection_gap"] = 0 if num_inputs + num_outputs == 0 else _prime_below(floori(float(size.x * size.y * size.z) / float(num_inputs + num_outputs)))
+	brain["role_selection_valid"] = _set_input_output_neurons(brain["neurons"], size, num_inputs, num_outputs, progress_callback)
 	end = Time.get_ticks_msec()
 	print('C: ', (end - start)/1000.0, ' seconds')
 	
@@ -57,7 +58,7 @@ func build(genome: Genome, size: Vector3i, num_inputs: int, num_outputs: int, pr
 	end = Time.get_ticks_msec()
 	print('D: ', (end - start)/1000.0, ' seconds')
 	
-	brain["valid"] = valid_brain
+	brain["valid"] = valid_brain and brain["role_selection_valid"]
 	
 	start = Time.get_ticks_msec()
 	_report_progress(progress_callback, 100)
@@ -108,46 +109,85 @@ func _create_neurons(size: Vector3i, genome: Genome, progress_callback: Callable
 
 	return neurons
 
-## Selects the input and output neurons.
-## Neurons are sorted independently by connection energy inside each slice and then
-## interleaved by rank: the lowest-energy neuron of every slice comes first, followed
-## by the second-lowest-energy neuron of every slice, and so on.
-## [param neurons] contains the brain neurons.
-## [param size] defines the brain dimensions.
-## [param num_inputs] defines the number of input neurons.
-## [param num_outputs] defines the number of output neurons.
-## Returns nothing.
-func _set_input_output_neurons(neurons: Array, size: Vector3i, num_inputs: int, num_outputs: int, progress_callback: Callable) -> void:
-	var K = size.z
-	var neurons_per_slice = size.x * size.y
-	var slices: Array = []
-	slices.resize(K)
+## Assigns interface roles after the all-internal provisional graph exists.
+## Selection uses prime-gap linear positions and provisional degree >= 2.
+## Outputs retain channel order, while internal neurons are spatially ordered.
+static func _prime_below(value: int) -> int:
+	for candidate in range(value - 1, 1, -1):
+		var prime := true
+		var divisor := 2
+		while divisor * divisor <= candidate:
+			if candidate % divisor == 0:
+				prime = false
+				break
+			divisor += 1
+		if prime:
+			return candidate
+	return 0
 
-	for k in K:
-		slices[k] = []
+func _set_input_output_neurons(neurons: Array, size: Vector3i, num_inputs: int, num_outputs: int, progress_callback: Callable) -> bool:
+	var total: int = neurons.size()
+	var channels: int = num_inputs + num_outputs
+	var gap: int = 0 if channels == 0 else _prime_below(floori(float(total) / float(channels)))
+	if channels > 0 and gap == 0:
+		_report_progress(progress_callback, 75)
+		return false
 
+	var by_spatial: Array = []
+	by_spatial.resize(total)
+	var incoming := PackedInt32Array()
+	incoming.resize(total)
 	for neuron in neurons:
-		slices[neuron["position"].z].append(neuron)
-
-	for k in K:
-		slices[k].sort_custom(func(a, b): return a["connections_value"] < b["connections_value"])
-
-	neurons.clear()
-
-	for rank in neurons_per_slice:
-		for k in K:
-			neurons.append(slices[k][rank])
-
-	for i in num_inputs:
-		neurons[i]["input"] = true
-		neurons[i]["activation_threshold"] = 0.0
-		neurons[i]["retention_factor"] = 0.0
-		neurons[i]["polarity_factor"] = 1
-
-	for i in num_outputs:
-		neurons[-1 - i]["output"] = true
-		
-	_report_progress(progress_callback, 30)
+		var pos: Vector3i = neuron["position"]
+		var spatial: int = pos.x + size.x * (pos.y + size.y * pos.z)
+		by_spatial[spatial] = neuron
+		for connection in neuron["connections"]:
+			var target: Vector3i = connection["target"]
+			incoming[target.x + size.x * (target.y + size.y * target.z)] += 1
+	var occupied := PackedByteArray()
+	occupied.resize(total)
+	var inputs: Array[int] = []
+	var outputs: Array[int] = []
+	var valid := true
+	for channel in channels:
+		var is_input: bool = channel < num_inputs
+		var preferred: int = ((channel + 1) * gap - 1) % total
+		var chosen := -1
+		for advance in total:
+			var candidate: int = (preferred + advance) % total
+			if occupied[candidate] != 0:
+				continue
+			var degree: int = by_spatial[candidate]["connections"].size() if is_input else incoming[candidate]
+			if degree < 2:
+				continue
+			chosen = candidate
+			break
+		if chosen < 0:
+			valid = false
+			break
+		occupied[chosen] = 1
+		if is_input:
+			inputs.append(chosen)
+		else:
+			outputs.append(chosen)
+	var ordered: Array = []
+	for spatial in inputs:
+		var neuron: Dictionary = by_spatial[spatial]
+		neuron["input"] = true
+		neuron["activation_threshold"] = 0.0
+		neuron["retention_factor"] = 0.0
+		neuron["polarity_factor"] = 1
+		ordered.append(neuron)
+	for spatial in total:
+		if occupied[spatial] == 0:
+			ordered.append(by_spatial[spatial])
+	for spatial in outputs:
+		var neuron: Dictionary = by_spatial[spatial]
+		neuron["output"] = true
+		ordered.append(neuron)
+	neurons.assign(ordered)
+	_report_progress(progress_callback, 75)
+	return valid
 
 ## Creates the initial connections and their weights.
 ## Connection generation is distributed across the WorkerThreadPool, one source neuron per task element.
@@ -210,7 +250,7 @@ func _create_connections(brain: Dictionary, gene: Array, search_gene: Array, pro
 		var completed = WorkerThreadPool.get_group_processed_element_count(group_task_id)
 		if completed != last_completed:
 			last_completed = completed
-			_report_progress(progress_callback, 30 + int(65.0 * completed / total_neurons))
+			_report_progress(progress_callback, 20 + int(55.0 * completed / total_neurons))
 		OS.delay_msec(10)
 
 	WorkerThreadPool.wait_for_group_task_completion(group_task_id)
@@ -220,7 +260,7 @@ func _create_connections(brain: Dictionary, gene: Array, search_gene: Array, pro
 	for neuron_index in total_neurons:
 		neurons[neuron_index]["connections"] = connection_results[neuron_index]
 
-	_report_progress(progress_callback, 95)
+	_report_progress(progress_callback, 75)
 
 ## Calculates the outgoing connections of one source neuron.
 ## This method is called concurrently by WorkerThreadPool.
@@ -409,7 +449,7 @@ func _clear_invalid_connections(brain: Dictionary, gene: Array, input_influence_
 		completed += 1
 
 		if completed % report_interval == 0 or completed == total_neurons:
-			_report_progress(progress_callback, 95 + int(3.0 * completed / total_neurons))
+			_report_progress(progress_callback, 75 + int(4.0 * completed / total_neurons))
 
 	var isolated_internal_before = 0
 	var isolated_output_before = 0
@@ -431,6 +471,7 @@ func _clear_invalid_connections(brain: Dictionary, gene: Array, input_influence_
 
 	brain["initial_local_connections"] = brain["initial_connections_first_pass"]
 	brain["initial_additional_connections"] = brain["initial_connections_second_pass"]
+	brain["role_cleanup_valid"] = isolated_input_before == 0 and isolated_output_before == 0
 	brain["isolated_before_rescue"] = {
 		"internal": isolated_internal_before,
 		"output": isolated_output_before,
@@ -505,6 +546,7 @@ func _clear_invalid_connections(brain: Dictionary, gene: Array, input_influence_
 
 	# psi is fixed at generation time and uses the initial mean incoming degree of internal neurons.
 	var mean_internal_incoming = 0.0 if internal_neuron_count == 0 else float(internal_incoming_sum) / internal_neuron_count
+	brain["mean_initial_incoming"] = mean_internal_incoming
 	brain["input_gain"] = (1.0 + sin(math.G(true, true, input_influence_gene))) * mean_internal_incoming
 	var input_min_weight = 1.0 / (1.0 + float(brain["input_gain"]))
 
@@ -521,20 +563,19 @@ func _clear_invalid_connections(brain: Dictionary, gene: Array, input_influence_
 				initial_weight = maxf(initial_weight, input_min_weight)
 			connection["weight"] = initial_weight
 
-	return rescue_success and isolated_internal == 0 and isolated_output == 0 and isolated_input == 0
+	return brain["role_cleanup_valid"] and rescue_success and isolated_internal == 0 and isolated_output == 0 and isolated_input == 0
 
 
 ## Creates the minimum connectivity required to rescue isolated neurons when possible.
 ## Internal and output neurons without incoming connections receive exactly one incoming connection.
 ## Input neurons without outgoing connections receive exactly one outgoing connection.
 ## Existing connections are never removed or redirected. Rescued candidates maximize H squared,
-## obey the normal input/output restrictions, and respect a temporary rescue limit of
-## ceil(1.01 * N_max) + 1 outgoing connections per source neuron.
+## obey input/output restrictions and the permanent N_max outgoing capacity.
 ## Returns false when any isolated neuron cannot be rescued under these rules.
 func _rescue_isolated_neurons(brain: Dictionary, gene: Array, neuron_by_spatial_index: Array, incoming_connections: PackedInt32Array, progress_callback: Callable) -> bool:
 	var neurons: Array = brain["neurons"]
 	var size: Vector3i = brain["size"]
-	var max_connections: int = int(ceil(1.01 * brain["max_connections"]) + 1)
+	var max_connections: int = int(brain["max_connections"])
 	var I: int = size.x
 	var J: int = size.y
 	var K: int = size.z
@@ -612,7 +653,7 @@ func _rescue_isolated_neurons(brain: Dictionary, gene: Array, neuron_by_spatial_
 		})
 		incoming_connections[target_spatial_index] = 1
 
-		_report_progress(progress_callback, 98 + int(float(isolated_index + 1) / isolated_receiver_count))
+		_report_progress(progress_callback, 79 + int(2.0 * float(isolated_index + 1) / isolated_receiver_count))
 
 	# Some initially isolated inputs may already have been used above to rescue an internal neuron.
 	# Any input that is still isolated receives exactly one outgoing connection to an internal neuron.
@@ -676,7 +717,7 @@ func _rescue_isolated_neurons(brain: Dictionary, gene: Array, neuron_by_spatial_
 		})
 		incoming_connections[best_target_spatial_index] += 1
 
-		_report_progress(progress_callback, 99 + int(float(isolated_index + 1) / isolated_input_count))
+		_report_progress(progress_callback, 81 + int(2.0 * float(isolated_index + 1) / isolated_input_count))
 
 	brain["rescue_candidates_receiver"] = rescue_candidates_receiver
 	brain["rescue_candidates_input"] = rescue_candidates_input
@@ -688,7 +729,7 @@ func _rescue_isolated_neurons(brain: Dictionary, gene: Array, neuron_by_spatial_
 		"input_source_saturated": input_source_saturated
 	}
 
-	_report_progress(progress_callback, 100)
+	_report_progress(progress_callback, 83)
 	return rescue_success
 
 ## Computes the three global modulatory dynamics parameters from the 8 digit gene.

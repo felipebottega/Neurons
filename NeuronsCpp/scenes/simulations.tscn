@@ -9,18 +9,6 @@ bg_color = Color(0.06469653, 0.064696535, 0.06469648, 1)
 [sub_resource type="Theme" id="Theme_5bjn8"]
 TooltipPanel/styles/panel = SubResource("StyleBoxFlat_3lnjx")
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_5bjn8"]
-bg_color = Color(0.05197096, 0.051970966, 0.051970914, 1)
-
-[sub_resource type="Theme" id="Theme_qux5w"]
-TooltipPanel/styles/panel = SubResource("StyleBoxFlat_5bjn8")
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_7ag8p"]
-bg_color = Color(0, 0, 0, 1)
-
-[sub_resource type="Theme" id="Theme_sx4as"]
-TooltipPanel/styles/panel = SubResource("StyleBoxFlat_7ag8p")
-
 [node name="Simulations" type="Node2D" unique_id=1422867934]
 script = ExtResource("1_q38lp")
 metadata/_edit_horizontal_guides_ = [86.0, 620.0, 755.0]
@@ -32,6 +20,7 @@ offset_top = 41.0
 offset_right = 1578.0
 offset_bottom = 72.0
 tooltip_text = "Dimension I"
+theme = SubResource("Theme_5bjn8")
 placeholder_text = "Dimension I"
 metadata/_edit_use_anchors_ = true
 
@@ -94,6 +83,7 @@ offset_top = 189.0
 offset_right = 1642.0
 offset_bottom = 220.0
 tooltip_text = "Mutation probability per digit. Must be between 0 and 1."
+theme = SubResource("Theme_5bjn8")
 placeholder_text = "Mutation Probability"
 
 [node name="Label" type="Label" parent="LineEdit5" unique_id=279723965]
@@ -109,6 +99,7 @@ offset_top = 150.0
 offset_right = 1642.0
 offset_bottom = 181.0
 tooltip_text = "Connections density eta must be positive."
+theme = SubResource("Theme_5bjn8")
 placeholder_text = "Connections Density"
 
 [node name="Label" type="Label" parent="LineEdit6" unique_id=296467734]
@@ -124,6 +115,7 @@ offset_top = 318.0
 offset_right = 1500.0
 offset_bottom = 349.0
 tooltip_text = "raw: uncapped neural iterations. /2, /4, /8: throttle to a fraction of the raw iteration rate, skipping frames and enforcing a real-time interval."
+theme = SubResource("Theme_5bjn8")
 selected = 0
 item_count = 4
 popup/item_0/text = "raw"
@@ -148,9 +140,10 @@ offset_left = 1430.0
 offset_top = 359.0
 offset_right = 1498.0
 offset_bottom = 390.0
-tooltip_text = "Choose a simulation experiment (1–5)."
+tooltip_text = "Switch simulations while keeping compatible genomes. Simulations 1–3: 4 inputs / 4 outputs. Simulation 4: 5 inputs / 4 outputs (contact). Simulation 5: 8 inputs / 4 outputs (four directional wall-distance sensors). Simulation 6: 13 inputs / 4 outputs (Simulation 4 with eight directional obstacle-distance sensors, 600 px range, including arena boundaries). Incompatible populations are rejected; switch tasks only with matching I/O. A switch restarts evaluation and clears previous-task statistics."
+theme = SubResource("Theme_5bjn8")
 selected = 0
-item_count = 5
+item_count = 6
 popup/item_0/text = "1"
 popup/item_0/id = 0
 popup/item_1/text = "2"
@@ -161,6 +154,8 @@ popup/item_3/text = "4"
 popup/item_3/id = 3
 popup/item_4/text = "5"
 popup/item_4/id = 4
+popup/item_5/text = "6"
+popup/item_5/id = 5
 
 [node name="SimulationLabel" type="Label" parent="." unique_id=1138616487]
 offset_left = 1300.0
@@ -202,12 +197,33 @@ metadata/_edit_use_anchors_ = true
 
 [node name="Pause" type="Button" parent="." unique_id=1252262134]
 modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
-offset_left = 1509.0
+offset_left = 1463.0
 offset_top = 419.0
-offset_right = 1641.0
+offset_right = 1595.0
 offset_bottom = 461.0
 theme_override_font_sizes/font_size = 24
 text = "Pause"
+metadata/_edit_use_anchors_ = true
+
+[node name="Pause2" type="Button" parent="." unique_id=128264186]
+modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
+offset_left = 1602.0
+offset_top = 419.0
+offset_right = 1735.0
+offset_bottom = 461.0
+tooltip_text = "Single Elite — reproductive mode
+
+- OFF: Use all 3 elite parents for the main crossovers (44/29/19 with 100 agents).
+- ON: Use only the top-ranked elite as a parent for the main crossovers.
+- Both: Preserve all 3 elite genomes without modification.
+- Both: Replace the 5 worst non-elite agents each generation: 3 with elite × random-genome 
+offspring and 2 with entirely random genomes. These agents are excluded from genetic diversity 
+measurements but compete normally for fitness and reproduction in subsequent generations.
+- Changes apply to the next offspring generation; the population is not reset."
+theme = SubResource("Theme_5bjn8")
+theme_override_font_sizes/font_size = 22
+toggle_mode = true
+text = "Single: OFF"
 metadata/_edit_use_anchors_ = true
 
 [node name="Save" type="Button" parent="." unique_id=825599750]
@@ -216,6 +232,7 @@ offset_left = 1301.0
 offset_top = 473.0
 offset_right = 1454.0
 offset_bottom = 515.0
+theme = SubResource("Theme_5bjn8")
 theme_override_font_sizes/font_size = 24
 text = "Save"
 metadata/_edit_use_anchors_ = true
@@ -232,19 +249,20 @@ metadata/_edit_use_anchors_ = true
 
 [node name="Load" type="Button" parent="." unique_id=1107466970]
 modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
-offset_left = 1509.0
+offset_left = 1514.0
 offset_top = 473.0
-offset_right = 1641.0
+offset_right = 1646.0
 offset_bottom = 515.0
+theme = SubResource("Theme_5bjn8")
 theme_override_font_sizes/font_size = 24
 text = "Load"
 metadata/_edit_use_anchors_ = true
 
 [node name="SaveBrain" type="Button" parent="." unique_id=1262852370]
 modulate = Color(0.83137256, 0.47058824, 0.24705882, 1)
-offset_left = 1509.0
+offset_left = 1514.0
 offset_top = 528.0
-offset_right = 1641.0
+offset_right = 1646.0
 offset_bottom = 570.0
 theme_override_font_sizes/font_size = 24
 text = "Save Brain"
@@ -304,7 +322,7 @@ offset_right = 1237.0
 offset_bottom = 722.0
 tooltip_text = "Fitness evolution across generations.
 
-Mean fitness is the arithmetic mean of the fitness values of all
+Mean fitness is the arithmetic mean of the fitness values of all 100
 agents in a generation.
 
 This mean includes the 5 renewed agents introduced by the current
@@ -324,19 +342,23 @@ offset_left = 1079.0
 offset_top = 842.0
 offset_right = 1237.0
 offset_bottom = 873.0
-tooltip_text = "Genetic diversity is the mean normalized Hamming distance between all
-pairs of genomes in the main evolving population.
-
-The 5 renewed agents introduced each generation are excluded from this
-calculation: 3 descendants produced by elite × new-random crossovers
-and 2 fully random agents.
-
+tooltip_text = "Genetic diversity is the mean normalized Hamming distance between all pairs of genomes in the main
+ evolving population. The 5 renewed agents introduced each generation are excluded from this
+calculation: 3 descendants produced by elite × new-random crossovers and 2 fully random agents.
 For genomes g_i and g_j of length L, their normalized Hamming distance is
 
 d(g_i,g_j) = (1/L) * sum_k [g_i(k) != g_j(k)].
 
-The reported diversity is the mean of d(g_i,g_j) over all unordered
-pairs of the remaining agents.
+The cyan curve measures the main population (excluding those 5 agents). The orange curve measures 
+the same distance between the three highest fitness agents of each completed generation, including 
+all three pairs.
+
+The two curves use the same logarithmic axis and smoothing selector.
+
+The reported diversity is the mean of d(g_i,g_j) over all unordered pairs of the remaining agents. Elite 
+diversity uses only the elite pairs. Older saves do not contain past elite-diversity measurements. Those
+historical values are left blank rather than estimated. Zero elite diversity means identical elite genomes 
+and is drawn at the plot floor.
 
 A value of 0 means all compared genomes are identical. A value of 1
 means every compared pair differs at every gene position.
@@ -349,10 +371,12 @@ Equivalent percentage interpretation:
 1e-4 = 0.01% differ on average
 0      = 0% differ on average
 
-These values are pairwise averages, so the implied number of differing
-gene digits per pair does not need to be an integer."
+These values are pairwise averages, so the implied number of differing gene digits per pair does not 
+need to be an integer.
+The title suffix (+n) counts how many new genomes entered the elite trio since the previous generation.
+"
 mouse_filter = 1
-theme = SubResource("Theme_qux5w")
+theme = SubResource("Theme_5bjn8")
 
 [node name="Title2" type="Label" parent="." unique_id=1660812460]
 offset_left = 35.0
@@ -380,7 +404,7 @@ Changing either gene selector rebuilds
 the heatmap from the stored history.
 "
 mouse_filter = 1
-theme = SubResource("Theme_sx4as")
+theme = SubResource("Theme_5bjn8")
 theme_override_colors/font_color = Color(0.8862745, 0.15686275, 0.15686275, 1)
 theme_override_font_sizes/font_size = 18
 text = "Genetic x Fitness Landscape"
@@ -448,6 +472,7 @@ offset_right = 524.0
 offset_bottom = 818.0
 tooltip_text = "ON: record phenotype-fitness samples and update the heatmap for each new generation.
 OFF: freeze the current heatmap and skip phenotype collection. Generations skipped while OFF are not recovered when switched back ON."
+theme = SubResource("Theme_5bjn8")
 toggle_mode = true
 button_pressed = true
 text = "ON"
@@ -460,6 +485,7 @@ offset_bottom = 307.0
 tooltip_text = "Show only the three surviving elites from the previous generation.
 All agents still participate in the simulation and fitness calculations.
 No previous-generation elites are available in the initial generation."
+theme = SubResource("Theme_5bjn8")
 toggle_mode = true
 text = "OFF"
 
@@ -478,6 +504,7 @@ offset_top = 356.0
 offset_right = 1712.0
 offset_bottom = 387.0
 tooltip_text = "OFF: show selected agent statistics. ON: preview the selected agent brain and live neural signals. Native signal snapshots and 3D preview update only while ON."
+theme = SubResource("Theme_5bjn8")
 toggle_mode = true
 text = "OFF"
 
@@ -495,7 +522,10 @@ offset_left = 1648.0
 offset_top = 317.0
 offset_right = 1734.5
 offset_bottom = 348.0
-tooltip_text = "Population size (15 to 200). Can only be changed when no simulation is running; changing it resets the current population and evolution history."
+tooltip_text = "Show only the three surviving elites from the previous generation.
+All agents still participate in the simulation and fitness calculations.
+No previous-generation elites are available in the initial generation."
+theme = SubResource("Theme_5bjn8")
 min_value = 15.0
 max_value = 200.0
 value = 100.0

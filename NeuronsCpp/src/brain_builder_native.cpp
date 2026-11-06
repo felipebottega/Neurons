@@ -444,9 +444,14 @@ Dictionary BrainBuilderNative::build(
 	brain.mu = modulatory_dynamics.z;
 
 	_create_neurons(brain, *genome.ptr(), progress_callback);
-	_set_input_output_neurons(brain, static_cast<int32_t>(num_inputs), static_cast<int32_t>(num_outputs), progress_callback);
+	// The provisional graph must be built with every neuron internal. Its degrees
+	// determine the admissibility of each prime-gap input/output candidate.
 	_create_connections(brain, genome->connections, genome->initial_search_region, progress_callback);
-	brain.valid = _clear_invalid_connections(brain, genome->connections, genome->input_influence, progress_callback);
+	brain.role_selection_valid = _set_input_output_neurons(
+			brain, static_cast<int32_t>(num_inputs), static_cast<int32_t>(num_outputs), progress_callback);
+	const bool connections_valid = _clear_invalid_connections(
+			brain, genome->connections, genome->input_influence, progress_callback);
+	brain.valid = brain.role_selection_valid && connections_valid;
 
 	// Native construction is not finished until its millions of Godot Variants are created.
 	Dictionary result = _to_dictionary(brain, progress_callback);
@@ -491,51 +496,88 @@ void BrainBuilderNative::_create_neurons(NativeBrain &brain, const GenomeNative 
 			});
 }
 
-void BrainBuilderNative::_set_input_output_neurons(NativeBrain &brain, int32_t num_inputs, int32_t num_outputs, const Callable &progress_callback) const {
-	const int32_t K = brain.size.z;
-	const int32_t neurons_per_slice = brain.size.x * brain.size.y;
-	_report_progress(progress_callback, 17);
-	std::vector<std::vector<NativeNeuron>> slices(static_cast<size_t>(K));
-
-	for (std::vector<NativeNeuron> &slice : slices) {
-		slice.reserve(static_cast<size_t>(neurons_per_slice));
-	}
-
-	for (NativeNeuron &neuron : brain.neurons) {
-		slices[static_cast<size_t>(neuron.position.z)].push_back(std::move(neuron));
-	}
-
-	for (int32_t k = 0; k < K; ++k) {
-		auto comparator = [](const NativeNeuron &a, const NativeNeuron &b) {
-			return a.connections_value < b.connections_value;
-		};
-		NativeSortArray<NativeNeuron, decltype(comparator)> sorter(comparator);
-		std::vector<NativeNeuron> &slice = slices[static_cast<size_t>(k)];
-		sorter.sort(slice.data(), static_cast<int64_t>(slice.size()));
-	}
-
-	std::vector<NativeNeuron> reordered;
-	reordered.reserve(brain.neurons.size());
-	for (int32_t rank = 0; rank < neurons_per_slice; ++rank) {
-		for (int32_t k = 0; k < K; ++k) {
-			reordered.push_back(std::move(slices[static_cast<size_t>(k)][static_cast<size_t>(rank)]));
+bool BrainBuilderNative::_set_input_output_neurons(NativeBrain &brain, int32_t num_inputs, int32_t num_outputs, const Callable &progress_callback) const {
+	const int32_t I = brain.size.x;
+	const int32_t IJ = I * brain.size.y;
+	const int32_t total = static_cast<int32_t>(brain.neurons.size());
+	const int32_t channels = num_inputs + num_outputs;
+	brain.role_selection_gap = 0;
+	if (channels > 0) {
+		const int32_t quotient = total / channels;
+		// Strictly less than floor(N/m), including when the quotient is prime.
+		for (int32_t candidate = quotient - 1; candidate >= 2; --candidate) {
+			bool prime = true;
+			for (int32_t divisor = 2; static_cast<int64_t>(divisor) * divisor <= candidate; ++divisor) {
+				if (candidate % divisor == 0) { prime = false; break; }
+			}
+			if (prime) { brain.role_selection_gap = candidate; break; }
+		}
+		if (brain.role_selection_gap == 0) {
+			_report_progress(progress_callback, 75);
+			return false;
 		}
 	}
-	brain.neurons = std::move(reordered);
 
-	for (int32_t i = 0; i < num_inputs; ++i) {
-		NativeNeuron &neuron = brain.neurons[static_cast<size_t>(i)];
+	// Creation order (i,j,k) is not spatial linear order (k,j,i). Build
+	// the spatial map explicitly and never reinterpret source indices.
+	std::vector<int32_t> by_spatial(static_cast<size_t>(total), -1);
+	std::vector<int32_t> incoming(static_cast<size_t>(total), 0);
+	for (int32_t index = 0; index < total; ++index) {
+		const NativeNeuron &neuron = brain.neurons[static_cast<size_t>(index)];
+		by_spatial[static_cast<size_t>(_spatial_index(neuron.position, I, IJ))] = index;
+		for (const NativeConnection &edge : neuron.connections) {
+			++incoming[static_cast<size_t>(edge.target_spatial_index)];
+		}
+	}
+	std::vector<uint8_t> occupied(static_cast<size_t>(total), 0);
+	std::vector<int32_t> selected_inputs;
+	std::vector<int32_t> selected_outputs;
+	selected_inputs.reserve(num_inputs);
+	selected_outputs.reserve(num_outputs);
+	bool valid = true;
+	for (int32_t channel = 0; channel < channels; ++channel) {
+		const bool is_input = channel < num_inputs;
+		const int64_t preferred = (static_cast<int64_t>(channel + 1) * brain.role_selection_gap - 1) % total;
+		int32_t selected = -1;
+		for (int32_t advance = 0; advance < total; ++advance) {
+			const int32_t spatial = static_cast<int32_t>((preferred + advance) % total);
+			if (occupied[static_cast<size_t>(spatial)] != 0) continue;
+			const int32_t neuron_index = by_spatial[static_cast<size_t>(spatial)];
+			const NativeNeuron &neuron = brain.neurons[static_cast<size_t>(neuron_index)];
+			const int32_t degree = is_input ? static_cast<int32_t>(neuron.connections.size()) : incoming[static_cast<size_t>(spatial)];
+			if (degree < 2) continue;
+			selected = spatial;
+			break;
+		}
+		if (selected < 0) { valid = false; break; }
+		occupied[static_cast<size_t>(selected)] = 1;
+		if (is_input) selected_inputs.push_back(selected);
+		else selected_outputs.push_back(selected);
+	}
+
+	std::vector<NativeNeuron> ordered;
+	ordered.reserve(static_cast<size_t>(total));
+	for (int32_t spatial : selected_inputs) {
+		NativeNeuron neuron = std::move(brain.neurons[static_cast<size_t>(by_spatial[static_cast<size_t>(spatial)])]);
 		neuron.input = true;
 		neuron.activation_threshold = 0.0f;
 		neuron.retention_factor = 0.0f;
 		neuron.polarity_factor = 1;
+		ordered.push_back(std::move(neuron));
 	}
-
-	for (int32_t i = 0; i < num_outputs; ++i) {
-		brain.neurons[brain.neurons.size() - 1 - static_cast<size_t>(i)].output = true;
+	for (int32_t spatial = 0; spatial < total; ++spatial) {
+		if (occupied[static_cast<size_t>(spatial)] == 0) {
+			ordered.push_back(std::move(brain.neurons[static_cast<size_t>(by_spatial[static_cast<size_t>(spatial)])]));
+		}
 	}
-
-	_report_progress(progress_callback, 21);
+	for (int32_t spatial : selected_outputs) {
+		NativeNeuron neuron = std::move(brain.neurons[static_cast<size_t>(by_spatial[static_cast<size_t>(spatial)])]);
+		neuron.output = true;
+		ordered.push_back(std::move(neuron));
+	}
+	brain.neurons = std::move(ordered);
+	_report_progress(progress_callback, 75);
+	return valid;
 }
 
 void BrainBuilderNative::_create_connections(NativeBrain &brain, const std::vector<int32_t> &gene,
@@ -690,6 +732,8 @@ bool BrainBuilderNative::_clear_invalid_connections(
 		}
 	}
 	brain.isolated_before_rescue = before;
+	// Role rescue is diagnostic, not a substitute for eligible interface roles.
+	brain.role_cleanup_valid = before.input == 0 && before.output == 0;
 	const bool rescue_success = _rescue_isolated_neurons(
 			brain,
 			gene,
@@ -726,6 +770,7 @@ bool BrainBuilderNative::_clear_invalid_connections(
 	const float mean_internal_incoming = internal_neuron_count == 0
 			? 0.0f
 			: static_cast<float>(internal_incoming_sum) / static_cast<float>(internal_neuron_count);
+	brain.mean_initial_incoming = mean_internal_incoming;
 	brain.input_gain = (1.0f + std::sin(FunctionsNative::g_value(true, true, input_influence_gene))) * mean_internal_incoming;
 	const float input_min_weight = 1.0f / (1.0f + brain.input_gain);
 
@@ -746,7 +791,7 @@ bool BrainBuilderNative::_clear_invalid_connections(
 	}
 
 	_report_progress(progress_callback, 83);
-	return rescue_success && after.internal == 0 && after.output == 0 && after.input == 0;
+	return brain.role_cleanup_valid && rescue_success && after.internal == 0 && after.output == 0 && after.input == 0;
 }
 
 bool BrainBuilderNative::_rescue_isolated_neurons(
@@ -759,9 +804,7 @@ bool BrainBuilderNative::_rescue_isolated_neurons(
 	const int32_t J = brain.size.y;
 	const int32_t K = brain.size.z;
 	const int32_t IJ = I * J;
-	const int32_t rescue_max_connections = static_cast<int32_t>(std::min(
-			static_cast<double>(std::numeric_limits<int32_t>::max()),
-			std::ceil(1.01 * static_cast<double>(brain.max_connections)) + 1.0));
+	const int32_t rescue_max_connections = brain.max_connections;
 	const Vector4 h_coefficients = FunctionsNative::h_coefficients_value(gene);
 	std::vector<int32_t> isolated_receivers;
 	bool rescue_success = true;
@@ -931,6 +974,10 @@ Dictionary BrainBuilderNative::_to_dictionary(const NativeBrain &brain, const Ca
 	result["nu"] = brain.nu;
 	result["mu"] = brain.mu;
 	result["input_gain"] = brain.input_gain;
+	result["mean_initial_incoming"] = brain.mean_initial_incoming;
+	result["role_selection_gap"] = brain.role_selection_gap;
+	result["role_selection_valid"] = brain.role_selection_valid;
+	result["role_cleanup_valid"] = brain.role_cleanup_valid;
 	result["valid"] = brain.valid;
 
 	Dictionary isolated_before;

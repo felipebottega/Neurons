@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bu51maondbu7u"
+path="res://.godot/imported/brain_packed_prepare7.glsl-689943a65f8103f9be71ae1df1f84eb0.res"
+
+[deps]
+
+source_file="res://shaders/brain_packed_prepare7.glsl"
+dest_files=["res://.godot/imported/brain_packed_prepare7.glsl-689943a65f8103f9be71ae1df1f84eb0.res"]
+
+[params]
+
