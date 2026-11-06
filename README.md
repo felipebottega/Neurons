@@ -45,8 +45,7 @@ Directed connections $a\to b$ have weights $w_a^b\in[0,1]$. Genetic functions de
 Input and output roles are assigned **after provisional connectivity**. With $m=N_{\mathrm{in}}+N_{\mathrm{out}}>0$, define
 
 $$
-q=\left\lfloor\frac{N}{m}\right\rfloor,\qquad
- g=\max\{p<q:p\text{ is prime}\}.
+q = \left\lfloor\frac{N}{m}\right\rfloor, \qquad g=\max\{p \lt q: p \text{ is prime}\}.
 $$
 
 The preferred zero-based indices are $rg-1$, for $r=1,\ldots,m$. A circular search selects eligible, unassigned neurons using provisional connectivity. Invalid role-to-role connections are removed, followed by connectivity rescue. Inputs have no incoming neural connections and connect only to internal neurons; outputs receive only from internal neurons and have no outgoing neural connections.
