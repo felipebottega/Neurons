@@ -132,13 +132,12 @@ Thus $s=0$ when no surface is within range and $s=1$ at contact. Simulation 4 re
 
 ## Simulation 7 — Maze with Extended Obstacle Sensing
 
-Simulation 7 extends Simulation 5 with the eight directional proximity sensors of Simulation 6. It retains Simulation 5's maze, movement, fitness, and difficulty progression, with **independent difficulty state**. Its brain has **16 sensory inputs** and **4 motor outputs**:
+Simulation 7 uses Simulation 5's maze, movement, fitness, and difficulty progression, with **independent difficulty state**. Its brain has **12 sensory inputs** and **4 motor outputs**:
 
-- **4 target-displacement inputs:** unchanged from Simulation 5.
-- **4 cardinal wall-proximity inputs:** unchanged from Simulation 5, with a **220-pixel** range.
-- **8 directional obstacle-proximity inputs:** four cardinal and four diagonal directions, with a **600-pixel** range. They detect maze walls and world boundaries.
+- **Inputs 1–4:** target displacement (left, right, up, down), unchanged from Simulation 5.
+- **Inputs 5–12:** obstacle proximity (W, E, N, S, NW, NE, SW, SE), with a **600-pixel** range, detecting maze walls and arena boundaries.
 
-The eight added inputs use the same normalization $s(d)$ defined for Simulation 6, measuring distance to the first collision surface with the agent's size accounted for. Simulation 5 remains available unchanged for comparison.
+The eight proximity inputs **replace**, rather than supplement, Simulation 5's four 220-pixel wall sensors. They use the same normalization $s(d)$ defined for Simulation 6, measuring distance to the first collision surface with the agent's size accounted for. Simulation 5 remains unchanged for comparison.
 
 ## Analysis Tools
 

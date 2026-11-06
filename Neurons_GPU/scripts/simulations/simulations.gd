@@ -937,7 +937,7 @@ func _setup_simulation(index: int) -> void:
 			simulation_selector.select(0)
 			_setup_simulation_1()
 	# Keep the expanded input panels inside their existing display column.
-	agent_info_label.add_theme_font_size_override("font_size", 10 if index == 6 else (12 if index == 5 else 14))
+	agent_info_label.add_theme_font_size_override("font_size", 12 if index == 5 or index == 6 else 14)
 	_update_simulation_4_num_tests_label()
 
 
@@ -1110,10 +1110,10 @@ func _setup_simulation_6() -> void:
 
 
 func _setup_simulation_7() -> void:
-	# Simulation 5's maze, actions, fitness and curriculum, retaining the
-	# original eight channels. Inputs 9-16 are the same eight 600 px rays as
-	# Simulation 6, now detecting maze walls and arena boundaries.
-	num_inputs = 16
+	# Simulation 5's maze, actions, fitness and curriculum. Keep only its
+	# four target displacement channels; replace the four 220 px cardinal
+	# wall sensors with eight 600 px rays from Simulation 6 (inputs 5-12).
+	num_inputs = 12
 	num_outputs = 4
 	target_test_count = SIMULATION_5_NUM_TESTS
 	target_position_change_interval_seconds = 0.0
@@ -2623,8 +2623,9 @@ func _simulation_5_update_agent_inputs(agent) -> void:
 
 
 func _simulation_7_update_agent_inputs(agent) -> void:
-	# Preserve the target and four 220 px wall sensors of Simulation 5.
-	_simulation_5_update_agent_inputs(agent)
+	# Retain only Simulation 5's four target displacement signals. The old
+	# 220 px cardinal wall sensors are superseded by the eight 600 px rays.
+	_simulation_1_update_agent_inputs(agent)
 	_simulation_7_write_wall_proximity(agent.position, agent)
 
 
@@ -2658,7 +2659,7 @@ func _simulation_7_write_wall_proximity(position: Vector2, agent) -> void:
 			distance = minf(distance, _ray_box_distance(position - rect.get_center(), direction, rect.size * 0.5))
 			if distance <= 0.0:
 				break
-		agent.input_signals[8 + sensor_index] = 1.0 - clampf(maxf(distance, 0.0) / EIGHT_DIRECTION_SENSOR_RANGE, 0.0, 1.0)
+		agent.input_signals[4 + sensor_index] = 1.0 - clampf(maxf(distance, 0.0) / EIGHT_DIRECTION_SENSOR_RANGE, 0.0, 1.0)
 
 
 func _simulation_5_write_wall_proximity(position: Vector2, agent) -> void:
@@ -3324,19 +3325,21 @@ func _simulation_6_agent_info(agent_index: int) -> Dictionary:
 
 
 func _simulation_7_agent_info(agent_index: int) -> Dictionary:
-	var info: Dictionary = _simulation_5_agent_info(agent_index)
+	# Build on Simulation 1's four target inputs, not Simulation 5's
+	# obsolete 220 px wall inputs.
+	var info: Dictionary = _simulation_1_agent_info(agent_index)
 	if info.is_empty():
 		return info
 	var stats: Dictionary = gpu_backend.selected_statistics(agent_index)
 	if stats.is_empty():
 		return info
 	var inputs: Variant = stats["input_signals_used"]
-	if inputs.size() < 16:
+	if inputs.size() < 12:
 		return info
 	var directions: Array[String] = ["W", "E", "N", "S", "NW", "NE", "SW", "SE"]
 	var extra: String = ""
 	for sensor_index in 8:
-		extra += "\nInput %d (wall %s): %.2f" % [9 + sensor_index, directions[sensor_index], float(inputs[8 + sensor_index])]
+		extra += "\nInput %d (wall %s): %.2f" % [5 + sensor_index, directions[sensor_index], float(inputs[4 + sensor_index])]
 	info["main"] = str(info["main"]).replace("\nOutput 1 (move left):", extra + "\nOutput 1 (move left):")
 	return info
 
