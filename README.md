@@ -8,78 +8,78 @@ A genome generates a brain; the brain controls an agent; the agent is evaluated 
 
 ### Genome
 
-Let \(\mathcal D=\{0,1,2,3\}\). A genome is an ordered tuple of genes:
+Let $\mathcal D=\{0,1,2,3\}$. A genome is an ordered tuple of genes:
 
-\[
+$$
 X=(x^{(1)},\ldots,x^{(n)}),\qquad x^{(r)}\in\mathcal D^{p_r}.
-\]
+$$
 
-In the current full model, \(n=16\): seven genes have 8 digits and nine have 64 digits. Thus
+In the current full model, $n=16$: seven genes have 8 digits and nine have 64 digits. Thus
 
-\[
+$$
 \sum_{r=1}^{16}p_r=7(8)+9(64)=632,\qquad
 |\mathcal G|=4^{632}.
-\]
+$$
 
 A gene is **not** a list of neurons or connections. It is mapped to scalar parameters or spatial fields. Two basic mappings are
 
-\[
+$$
 F_\beta(x)=\sum_{t=0}^{p-1}\sqrt{1+t}\,\beta^{x_t},
 \qquad
 G_{\delta_1,\delta_2}(x)=\sum_{t=0}^{p-1}\sin(1+t)\sin(1+x_t)^{\delta_1}\cos(1+x_t)^{\delta_2}.
-\]
+$$
 
-Spatial functions derived from the genes determine neuronal properties and connectivity. Genetic variation consists of crossover and digit mutations in \(\mathcal D\).
+Spatial functions derived from the genes determine neuronal properties and connectivity. Genetic variation consists of crossover and digit mutations in $\mathcal D$.
 
 ### Brain and connectivity
 
 The brain occupies the lattice
 
-\[
+$$
 \mathcal N=\{0,\ldots,I-1\}\times\{0,\ldots,J-1\}\times\{0,\ldots,K-1\},
 \qquad N=IJK.
-\]
+$$
 
-Directed connections \(a\to b\) have weights \(w_a^b\in[0,1]\). Genetic functions determine candidate connections and their initial weights, subject to the outgoing-degree limit \(N_{\max}\).
+Directed connections $a\to b$ have weights $w_a^b\in[0,1]$. Genetic functions determine candidate connections and their initial weights, subject to the outgoing-degree limit $N_{\max}$.
 
-Input and output roles are assigned **after provisional connectivity**. With \(m=N_{\mathrm{in}}+N_{\mathrm{out}}>0\), define
+Input and output roles are assigned **after provisional connectivity**. With $m=N_{\mathrm{in}}+N_{\mathrm{out}}>0$, define
 
-\[
+$$
 q=\left\lfloor\frac{N}{m}\right\rfloor,\qquad
  g=\max\{p<q:p\text{ is prime}\}.
-\]
+$$
 
-The preferred zero-based indices are \(rg-1\), for \(r=1,\ldots,m\). A circular search selects eligible, unassigned neurons using provisional connectivity. Invalid role-to-role connections are removed, followed by connectivity rescue. Inputs have no incoming neural connections and connect only to internal neurons; outputs receive only from internal neurons and have no outgoing neural connections.
+The preferred zero-based indices are $rg-1$, for $r=1,\ldots,m$. A circular search selects eligible, unassigned neurons using provisional connectivity. Invalid role-to-role connections are removed, followed by connectivity rescue. Inputs have no incoming neural connections and connect only to internal neurons; outputs receive only from internal neurons and have no outgoing neural connections.
 
 ### Neural dynamics
 
-For \(s\geq0\), neural signals are normalized by
+For $s\geq0$, neural signals are normalized by
 
-\[
+$$
 \sigma(s)=1-e^{-s/\kappa},\qquad \kappa\geq1.
-\]
+$$
 
-Each non-input neuron has a state \(s_t\), genetically determined activation properties, a refractory mechanism, and a recent-activity trace \(R_t\in[0,1]\). An active internal neuron transmits a signal through its outgoing connections, scaled by the weight and source polarity \(\alpha\in\{-1,+1\}\). Input neurons instead receive external scalar signals and have special transmission rules.
+Each non-input neuron has a state $s_t$, genetically determined activation properties, a refractory mechanism, and a recent-activity trace $R_t\in[0,1]$. An active internal neuron transmits a signal through its outgoing connections, scaled by the weight and source polarity $\alpha\in\{-1,+1\}$. Input neurons instead receive external scalar signals and have special transmission rules.
 
 The full model changes connections through four complementary processes:
 
-- **Hebbian reinforcement:** when a connection transmits, \(w\leftarrow w+\gamma(1-w)\), with \(0\leq\gamma\leq1/2\).
-- **Endogenous modulation:** an eligibility trace \(e_t\) records recent synaptic use; a spatial modulatory field produces \(m_t\). The weight update is \(w\leftarrow w+m_te_t(1-w)\) for \(m_t\geq0\), or \(w\leftarrow w+m_te_tw\) for \(m_t<0\).
+- **Hebbian reinforcement:** when a connection transmits, $w\leftarrow w+\gamma(1-w)$, with $0\leq\gamma\leq1/2$.
+- **Endogenous modulation:** an eligibility trace $e_t$ records recent synaptic use; a spatial modulatory field produces $m_t$. The weight update is $w\leftarrow w+m_te_t(1-w)$ for $m_t\geq0$, or $w\leftarrow w+m_te_tw$ for $m_t<0$.
 - **Synaptic decay:** non-input connections can weaken until removed; input-origin connections are protected from ordinary decay.
 - **Structural plasticity:** connections may be removed, created, or replaced, subject to connectivity constraints.
 
-**Homeostasis.** With \(L=0.05\), \(H=0.95\), and \(s_H=-\kappa\ln(1-H)\), the high-activity correction applies when \(R_t>H\) and \(s>s_H\). Define
+**Homeostasis.** With $L=0.05$, $H=0.95$, and $s_H=-\kappa\ln(1-H)$, the high-activity correction applies when $R_t>H$ and $s>s_H$. Define
 
-\[
+$$
 \lambda_t=\frac{R_t-H}{1-H},\qquad
 s\leftarrow s-\lambda_t(s-s_H).
-\]
+$$
 
 At the same event, every **incoming connection whose source is not an input neuron** undergoes
 
-\[
+$$
 \boxed{w_a^b\leftarrow(1-\lambda_t(b))w_a^b.}
-\]
+$$
 
 This synaptic downscaling is independent of excitatory/inhibitory polarity. Low-activity homeostasis corrects the neuronal state but does **not** increase synaptic weights. The input-origin exclusion preserves the special sensory connectivity rules.
 
@@ -87,11 +87,11 @@ This synaptic downscaling is independent of excitatory/inhibitory polarity. Low-
 
 For each generation:
 
-\[
+$$
 \text{genomes}\ \longrightarrow\ \text{brains}\ \longrightarrow\
 \text{agent behavior}\ \longrightarrow\ \text{fitness}\ \longrightarrow\
 \text{selection, crossover, mutation}.
-\]
+$$
 
 Selected elite genomes can survive unchanged. Evaluation is task-dependent; the neural equations do not receive an explicit reward or gradient from fitness.
 
@@ -123,13 +123,13 @@ Simulation 6 extends Simulation 4 while retaining its environment, fitness, and 
 - **1 binary collision input:** indicates physical contact.
 - **8 obstacle-proximity inputs:** equally spaced directions, including diagonals, covering 360°.
 
-Each proximity sensor detects the nearest obstacle surface **or world boundary** along its direction, up to a range of **600 pixels**. With distance \(d\) to contact (accounting for the agent's size), its normalized signal is
+Each proximity sensor detects the nearest obstacle surface **or world boundary** along its direction, up to a range of **600 pixels**. With distance $d$ to contact (accounting for the agent's size), its normalized signal is
 
-\[
+$$
 s(d)=1-\min\left(1,\frac{d}{600}\right).
-\]
+$$
 
-Thus \(s=0\) when no surface is within range and \(s=1\) at contact. Simulation 4 remains available unchanged for comparison.
+Thus $s=0$ when no surface is within range and $s=1$ at contact. Simulation 4 remains available unchanged for comparison.
 
 ## Analysis Tools
 
