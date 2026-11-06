@@ -140,10 +140,10 @@ offset_left = 1430.0
 offset_top = 359.0
 offset_right = 1498.0
 offset_bottom = 390.0
-tooltip_text = "Switch simulations while keeping compatible genomes. Simulations 1–3: 4 inputs / 4 outputs. Simulation 4: 5 inputs / 4 outputs (contact). Simulation 5: 8 inputs / 4 outputs (four directional wall-distance sensors). Simulation 6: 13 inputs / 4 outputs (Simulation 4 with eight directional obstacle-distance sensors, 600 px range, including arena boundaries). Incompatible populations are rejected; switch tasks only with matching I/O. A switch restarts evaluation and clears previous-task statistics."
+tooltip_text = "Switch simulations while keeping compatible genomes. Simulations 1–3: 4 inputs / 4 outputs. Simulation 4: 5 inputs / 4 outputs (contact). Simulation 5: 8 inputs / 4 outputs (four directional wall-distance sensors, 220 px range). Simulation 6: 13 inputs / 4 outputs (Simulation 4 plus eight directional obstacle-distance sensors, 600 px range, including arena boundaries). Simulation 7: 16 inputs / 4 outputs (Simulation 5 plus eight directional maze-wall sensors, 600 px range, including arena boundaries). Incompatible populations are rejected; switch tasks only with matching I/O. A switch restarts evaluation and clears previous-task statistics."
 theme = SubResource("Theme_5bjn8")
 selected = 0
-item_count = 6
+item_count = 7
 popup/item_0/text = "1"
 popup/item_0/id = 0
 popup/item_1/text = "2"
@@ -156,6 +156,8 @@ popup/item_4/text = "5"
 popup/item_4/id = 4
 popup/item_5/text = "6"
 popup/item_5/id = 5
+popup/item_6/text = "7"
+popup/item_6/id = 6
 
 [node name="SimulationLabel" type="Label" parent="." unique_id=1138616487]
 offset_left = 1300.0
